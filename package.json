@@ -1,0 +1,14 @@
+{
+  "name": "echo-apartment",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "残響アパート — ECHO APARTMENT: PS1-style Japanese psychological horror (Three.js, no external assets)",
+  "imports": {
+    "three": "./vendor/three.module.js"
+  },
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node smoke.mjs"
+  }
+}

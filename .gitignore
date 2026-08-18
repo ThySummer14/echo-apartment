@@ -1,0 +1,8 @@
+# dependencies (the game is self-contained: package.json imports map to vendor/)
+node_modules/
+
+# macOS
+.DS_Store
+
+# logs / scratch
+*.log
