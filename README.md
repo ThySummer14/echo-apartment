@@ -9,7 +9,13 @@
 
 ---
 
-## 快速开始
+## 在线游玩
+
+**https://thysummer14.github.io/echo-apartment/**
+
+GitHub Pages 托管，加载即玩（建议使用 Chrome/Edge，戴耳机体验）。
+
+## 本地运行
 
 ```bash
 cd echo-apartment
