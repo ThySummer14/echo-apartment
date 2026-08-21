@@ -302,7 +302,7 @@ export class Level {
     // wardrobe passage x -16.4..-14.6, z 13.8..14.8 (low ceiling 2.2)
     this.room(-16.4, -14.6, 13.8, 14.8, { n: true, w: true, s: false, e: false, wallMat: M.concrete, h: 2.2 });
     // bathroom  x -17.6..-13.8, z 14.8..21 (e wall only above bedroom's wall, z 15.5+)
-    this.room(-17.6, -13.8, 14.8, 21, { n: false, w: true, s: true, e: false, wallMat: M.concrete });
+    this.room(-17.6, -13.8, 14.8, 21, { n: false, w: true, s: true, e: false, wallMat: M.concrete, floorMat: M.tile, floorUV: [5, 8] });
     this.wallX(-13.8, 15.5, 21, 0, CORR_H, M.concrete, []);
     // shared wall between passage and bathroom (gap at the west end, clear of the wardrobe frame)
     this.wallZ(14.8, -17.6, -13.8, 0, CORR_H, M.concrete, [[-16.3, -15.0]]);
@@ -895,6 +895,32 @@ export class Level {
     // newspapers
     this.decalFloor(-2.6, 5.6, 0.42, 0.56, t.news, rng() * 3);
     this.decalFloor(-6.4, 1.6, 0.42, 0.56, t.news, 0.7);
+    // dishes left soaking in the sink basin - the rim slab top is y=1.0, the
+    // bowls sit half-sunk like they were abandoned mid-washing
+    const bowlMat = stdMat({ color: 0xc9c4b4, roughness: 0.55 });
+    for (const [bx, bz, r] of [[-5.9, 7.16, 0.09], [-5.7, 7.26, 0.11], [-5.86, 7.3, 0.08]]) {
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.72, 0.055, 8), bowlMat);
+      bowl.position.set(bx, 0.99, bz);
+      this.scene.add(bowl);
+    }
+    const chop = new THREE.Mesh(makeBoxGeo(0.012, 0.012, 0.24), stdMat({ color: 0x9a7b4f, roughness: 0.85 }));
+    chop.position.set(-5.78, 1.005, 7.2);
+    chop.rotation.y = 0.5;
+    this.scene.add(chop);
+    // a pot forgotten on one of the burners (burner top y=0.94)
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.1, 0.13, 10), M.darkMetal);
+    pot.position.set(-3.55, 1.005, 7.05);
+    this.scene.add(pot);
+    // rice cooker + soy sauce on the counter (top y=0.98)
+    const cooker = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.15, 0.17, 10), M.whiteMetal);
+    cooker.position.set(-6.95, 1.065, 7.15);
+    this.scene.add(cooker);
+    const cookerLid = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.02, 10), M.darkMetal);
+    cookerLid.position.set(-6.95, 1.16, 7.15);
+    this.scene.add(cookerLid);
+    const soy = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.15, 6), stdMat({ color: 0x2e2118, roughness: 0.4 }));
+    soy.position.set(-5.15, 1.055, 7.15);
+    this.scene.add(soy);
 
     // ---------- living ----------
     this.box(-6.5, 15.15, 0, 1.1, 0.45, 0.45, M.darkWood, { geo: { ao: 'wall' } }); // tv stand
@@ -1030,6 +1056,19 @@ export class Level {
       this.box(-14.53, 14.05 + i * 0.24, 1.32, 0.05, 0.42, 0.95,
         stdMat({ color: clothCols[i], roughness: 0.95 }), { geo: { ao: 'none' }, collide: false, cast: true });
     }
+    // kakemono scroll on the north wall (the wall the futon faces) - bare
+    // plaster read as unfinished geometry; a hanging scroll is the classic
+    // washitsu dressing. Wooden rods give it physical depth.
+    this.decalWall(-11.2, 7.615, 1.48, 0.36, 1.1, t.scroll, 'n');
+    this.box(-11.2, 7.635, 2.0, 0.44, 0.045, 0.032, M.darkWood, { geo: { ao: 'none' }, collide: false });
+    this.box(-11.2, 7.635, 0.9, 0.44, 0.045, 0.032, M.darkWood, { geo: { ao: 'none' }, collide: false });
+    // moving boxes stacked in the NW corner
+    const cardboard = stdMat({ color: 0x7d6a52, roughness: 0.92 });
+    this.box(-13.2, 8.1, 0, 0.52, 0.44, 0.36, cardboard, { geo: { ao: 'wall' } });
+    const boxTop = this.box(-13.12, 8.16, 0.36, 0.42, 0.36, 0.3, cardboard, { geo: { ao: 'none' } });
+    boxTop.rotation.y = 0.16;
+    // a zabuton someone left beside the futon
+    this.box(-12.5, 11.4, 0, 0.5, 0.5, 0.09, stdMat({ color: 0x5a3a3a, roughness: 0.95 }), { geo: { ao: 'none' } });
 
     // ---------- bathroom ----------
     this.box(-15.8, 20.25, 0, 1.4, 0.55, 0.6, M.rust, { geo: { ao: 'wall' } });   // tub shell
@@ -1065,6 +1104,30 @@ export class Level {
     medPivot.add(medDoor);
     medPivot.rotation.y = -0.55; // swing INTO the bathroom (west), not into the wall/bedroom
     this.scene.add(medPivot);
+    // washing machine in the SE corner (clear of the tub rim x -16.55..-15.05
+    // and the east wall inner face x=-13.9) - lid ajar, never quite drained
+    const washer = this.box(-14.5, 20.3, 0, 0.62, 0.62, 0.92, M.whiteMetal, { geo: { ao: 'wall' } });
+    this.props.washer = washer;
+    this.regInteractable(washer, '洗衣机', 2.2, () => this.handlers.onWasher?.());
+    const washerLid = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.03, 10),
+      stdMat({ color: 0x9aa0a4, roughness: 0.6, metalness: 0.15 })
+    );
+    washerLid.position.set(-14.5, 0.935, 20.3);
+    washerLid.rotation.x = 0.06; // ajar
+    this.scene.add(washerLid);
+    this.box(-14.5, 20.52, 0.92, 0.56, 0.1, 0.1, M.darkMetal, { geo: { ao: 'none' }, collide: false });
+    // laundry basket with a heap of clothes
+    const basket = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.17, 0.14, 0.36, 8),
+      stdMat({ color: 0x8a94a0, roughness: 0.85 })
+    );
+    basket.position.set(-14.75, 0.18, 19.5);
+    this.scene.add(basket);
+    const clothes = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 5), stdMat({ color: 0x5a5a66, roughness: 0.95 }));
+    clothes.position.set(-14.75, 0.37, 19.5);
+    clothes.scale.y = 0.5;
+    this.scene.add(clothes);
 
     // ---------- altar ----------
     this.box(7.55, 4.8, 0, 0.85, 0.75, 0.5, M.darkWood, { geo: { ao: 'wall' } });
@@ -1159,6 +1222,34 @@ export class Level {
     mob.position.set(4.4, 1.95, 9.1);
     this.scene.add(mob);
     this.props.mobile = mob;
+    // fūrin wind chime hung from the ceiling - no window in this room; a
+    // child's chime stirring in a sealed space is its own kind of wrong.
+    // Group origin at the ceiling hook so the whole chime can swing.
+    const furin = new THREE.Group();
+    furin.position.set(2.3, 2.5, 13.0);
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.42, 4), M.darkMetal);
+    cord.position.y = -0.21;
+    furin.add(cord);
+    const bellMat = stdMat({ color: 0xb8c4cc, roughness: 0.25, metalness: 0.2 });
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.032, 0.055, 8), bellMat);
+    bell.position.y = -0.45;
+    furin.add(bell);
+    const clapper = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.1, 4), M.darkMetal);
+    clapper.position.y = -0.53;
+    furin.add(clapper);
+    const clapperBall = new THREE.Mesh(new THREE.SphereGeometry(0.012, 5, 4), M.darkMetal);
+    clapperBall.position.y = -0.59;
+    furin.add(clapperBall);
+    const stripMat = stdMat({ color: 0xd8d0bc, roughness: 0.9, side: THREE.DoubleSide });
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + 0.5;
+      const strip = new THREE.Mesh(makeBoxGeo(0.028, 0.16, 0.004), stripMat);
+      strip.position.set(Math.cos(a) * 0.035, -0.66, Math.sin(a) * 0.035);
+      strip.rotation.y = -a;
+      furin.add(strip);
+    }
+    this.scene.add(furin);
+    this.props.furin = furin;
     // teddy bear
     const ted = new THREE.Group();
     const tmat = stdMat({ color: 0x7a5a3a, roughness: 0.95 });
@@ -1652,6 +1743,13 @@ export class Level {
       this.props.ropes[i].rotation.x = Math.cos(time * 0.55 + i) * 0.03;
     }
     if (this.props.mobile) this.props.mobile.rotation.y = time * 0.5;
+    // fūrin sways on the wind: gusty, slightly arrhythmic (it should feel
+    // breathed-on rather than pendulum-neat)
+    if (this.props.furin) {
+      const f = this.props.furin;
+      f.rotation.z = Math.sin(time * 1.7) * 0.05 + Math.sin(time * 4.3 + 1.2) * 0.03;
+      f.rotation.x = Math.cos(time * 1.3 + 0.6) * 0.04 + Math.sin(time * 3.7) * 0.02;
+    }
     // the dripping pipe joint near z 33
     if (playerPos) {
       this.dripT = (this.dripT ?? 0) - dt;

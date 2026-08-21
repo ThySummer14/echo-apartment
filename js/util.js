@@ -272,11 +272,17 @@ export function makeBoxGeo(w, h, d, opts = {}) {
     const strength = opts.aoStrength ?? 0.85;
     const hw = w / 2, hh = h / 2, hd = d / 2;
     for (let i = 0; i < pos.count; i++) {
+      // NOTE: positions were already jittered above, so a vertex can sit just
+      // OUTSIDE the box (|y| > hh etc.). Every normalized coordinate below is
+      // therefore clamped into [0,1] BEFORE any Math.pow — pow(negative, x)
+      // returns NaN, and a NaN vertex color rasterizes as garbage white on
+      // real GPUs (SwiftShader renders it black, which hid the bug in headless
+      // screenshots). This was the "walls render as big white slabs" bug.
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
       let m = 1;
       if (opts.ao === 'wall') {
-        const dy = (y + hh) / h; // 0 bottom .. 1 top
-        const e1 = (1 - Math.abs(x) / hw) * 0.5 + (1 - Math.abs(z) / hd) * 0.5; // distance from vertical edges
+        const dy = clamp((y + hh) / h, 0, 1); // 0 bottom .. 1 top
+        const e1 = (1 - clamp(Math.abs(x) / hw, 0, 1)) * 0.5 + (1 - clamp(Math.abs(z) / hd, 0, 1)) * 0.5; // distance from vertical edges
         // brightness profile across the wall height: darkest at the floor AND
         // the ceiling line, brightest mid-height. The old `pow(dy,0.35)` made
         // the TOP the brightest — combined with ceiling lights directly above,
@@ -285,14 +291,15 @@ export function makeBoxGeo(w, h, d, opts = {}) {
         // wall tops must NOT hit full brightness under the ceiling lights (that
         // was the white-blob source) but should stay readable - 0.7 at the
         // top/bottom line, 1.0 at mid-height.
-        m = clamp(0.70 + 0.30 * Math.pow(1 - dyc, 1.3), 0, 1) * clamp(0.45 + 0.55 * e1, 0, 1);
+        m = clamp(0.70 + 0.30 * Math.pow(clamp(1 - dyc, 0, 1), 1.3), 0, 1) * clamp(0.45 + 0.55 * e1, 0, 1);
       } else if (opts.ao === 'floor' || opts.ao === 'ceil') {
-        const ex = 1 - Math.abs(x) / hw, ez = 1 - Math.abs(z) / hd;
-        const e = Math.min(ex, ez);
+        const ex = 1 - clamp(Math.abs(x) / hw, 0, 1), ez = 1 - clamp(Math.abs(z) / hd, 0, 1);
+        const e = clamp(Math.min(ex, ez), 0, 1);
         m = clamp(0.5 + 0.5 * Math.pow(e, 1.6), 0, 1);
       }
       const n = 1 - rand(0, 0.10); // dirty variance
-      const c = m * n * strength;
+      let c = m * n * strength;
+      if (!Number.isFinite(c)) c = strength; // last-ditch guard: never write NaN/Inf
       colors[i * 3] = c; colors[i * 3 + 1] = c; colors[i * 3 + 2] = c;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));

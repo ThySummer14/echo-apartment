@@ -473,6 +473,52 @@ export class AudioEngine {
     this._osc({ type: 'sawtooth', f0: 420, f1: 380, dur: 1.1, gain: 0.02, attack: 0.08 });
   }
 
+  // a distant emergency siren somewhere across the flooded city - two
+  // detuned carriers beating against each other, very slow swell, far away
+  siren(pan = 0) {
+    if (!this.ctx) return;
+    for (let i = 0; i < 2; i++) {
+      this._osc({ type: 'sine', f0: 660 + i * 4, f1: 875 + i * 4, dur: 3.0, gain: 0.011, attack: 1.4, pan, wet: 0.6 });
+      this._osc({ type: 'sine', f0: 875 + i * 4, f1: 660 + i * 4, dur: 3.0, gain: 0.011, attack: 1.4, pan, wet: 0.6, delay: 3.1 });
+    }
+  }
+
+  // water hammer: pipes knock inside the walls, three dull thuds descending
+  hammer(pan = 0) {
+    if (!this.ctx) return;
+    for (let i = 0; i < 3; i++) {
+      this._osc({ type: 'triangle', f0: 132 - i * 14, f1: 58, dur: 0.09, gain: 0.085, attack: 0.003, pan, delay: i * 0.19 });
+      this._noise({ dur: 0.05, type: 'bandpass', freq: 2300, q: 3, gain: 0.018, attack: 0.002, pan, delay: i * 0.19 });
+    }
+  }
+
+  // the washer down the hall starts a spin cycle nobody asked for
+  washer(pan = 0) {
+    if (!this.ctx) return;
+    this._osc({ type: 'sawtooth', f0: 52, f1: 58, dur: 5.5, gain: 0.026, attack: 1.2, pan, wet: 0.5 });
+    this._noise({ dur: 5.5, type: 'bandpass', freq: 320, q: 2, gain: 0.018, attack: 1.2, pan, wet: 0.5 });
+    // unbalanced load thumps
+    for (let i = 0; i < 9; i++) {
+      this._osc({ type: 'sine', f0: 46, dur: 0.07, gain: 0.05, attack: 0.004, pan, delay: 1.4 + i * 0.42 });
+    }
+  }
+
+  // a child's wind chime (fūrin) stirs - bright glass tones at irregular,
+  // breathing intervals; too delicate for the rot in this building
+  chime(pan = 0) {
+    if (!this.ctx) return;
+    const notes = [1975, 2349, 2637, 3136];
+    const r = mulberry32((Math.random() * 1e9) | 0);
+    let t = 0;
+    const n = 3 + (r() * 3 | 0);
+    for (let i = 0; i < n; i++) {
+      const f = notes[(r() * notes.length) | 0];
+      this._osc({ type: 'sine', f0: f, dur: 1.5, gain: 0.028, attack: 0.004, pan, delay: t, wet: 0.5 });
+      this._osc({ type: 'sine', f0: f * 2.76, dur: 0.8, gain: 0.006, attack: 0.004, pan, delay: t, wet: 0.5 });
+      t += 0.18 + r() * 0.85;
+    }
+  }
+
   duck() { // brief silence for scares
     if (this.master) {
       this.master.gain.setTargetAtTime(0.15, this.ctx.currentTime, 0.02);

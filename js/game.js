@@ -5,7 +5,6 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { AudioEngine } from './audio.js';
 import { Level } from './level.js';
 import { Monster, GhostGirl } from './monster.js';
@@ -61,6 +60,7 @@ const GRADE_FRAG = `
   uniform float uFear;
   uniform float uDistort;
   uniform float uGlow;
+  uniform float uExposure;
   varying vec2 vUv;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -77,6 +77,31 @@ const GRADE_FRAG = `
     else if (i < 12.5) v = 15.0; else if (i < 13.5) v = 7.0;
     else if (i < 14.5) v = 13.0; else v = 5.0;
     return v / 16.0;
+  }
+
+  // three.js' ACES filmic fit + sRGB OETF, moved here from OutputPass so the
+  // ordered dither at the end can quantize DISPLAY values (see note in main()).
+  vec3 acesFilm(vec3 color) {
+    const mat3 ACESInputMat = mat3(
+      vec3(0.59719, 0.07600, 0.02840),
+      vec3(0.35458, 0.90834, 0.13383),
+      vec3(0.04823, 0.01566, 0.83777)
+    );
+    const mat3 ACESOutputMat = mat3(
+      vec3( 1.60475, -0.10208, -0.00327),
+      vec3(-0.53108,  1.10813, -0.07276),
+      vec3(-0.07367, -0.00605,  1.07602)
+    );
+    color *= uExposure / 0.6;
+    color = ACESInputMat * color;
+    color = (color * (color + 0.0245786) - 0.000090537)
+          / (color * (0.983729 * color + 0.4329510) + 0.238081);
+    color = ACESOutputMat * color;
+    return clamp(color, 0.0, 1.0);
+  }
+  vec3 linearToSRGB(vec3 c) {
+    return mix(pow(c, vec3(0.41666)) * 1.055 - 0.055, c * 12.92,
+               vec3(lessThanEqual(c, vec3(0.0031308))));
   }
 
   void main() {
@@ -116,9 +141,6 @@ const GRADE_FRAG = `
     // Roll off only the part above 1.2; pixels at or below 1.2 stay untouched.
     col += over * (vec3(1.0) / (vec3(1.0) + over * 0.32) - vec3(1.0));
 
-    // film grain
-    col += (hash(uv * 913.7 + fract(uTime) * 131.1) - 0.5) * 0.055;
-
     // scanlines (2px at 360p)
     col *= 1.0 - 0.085 * sin(uv.y * 360.0 * 3.14159265);
 
@@ -131,7 +153,22 @@ const GRADE_FRAG = `
     float vg = length(uv - 0.5);
     col *= 1.0 - smoothstep(0.38, 1.0, vg) * (0.34 + uFear * 0.28 + uDistort * 0.25);
 
-    // ordered dithering (banding killer)
+    // display transform (was OutputPass). Everything above works on linear
+    // HalfFloat scene values; ACES + sRGB happen here so the grain and the
+    // ordered dither below operate on DISPLAY values. Dithering LINEAR values
+    // put the first code step at ~21% display brightness — the bayer pattern
+    // turned every near-black wall into a harsh 0-vs-50/255 checkerboard,
+    // which was the "dark fields drown in grain" artifact.
+    col = acesFilm(col);
+    col = linearToSRGB(col);
+
+    // film grain, in display space: perceptually even size, gently tapered
+    // toward the shadows (alive in the light, blacks stay quiet)
+    float dlum = dot(col, vec3(0.299, 0.587, 0.114));
+    col += (hash(uv * 913.7 + fract(uTime) * 131.1) - 0.5)
+         * 0.045 * (0.3 + 0.7 * smoothstep(0.05, 0.25, dlum));
+
+    // ordered dithering (banding killer) — 32 perceptually even display levels
     col = floor(col * 31.0 + bayer4(gl_FragCoord.xy)) / 31.0;
 
     gl_FragColor = vec4(col, 1.0);
@@ -251,12 +288,14 @@ class Game {
         uFear: { value: 0 },
         uDistort: { value: 0 },
         uGlow: { value: 0.35 },
+        uExposure: { value: this.renderer.toneMappingExposure },
       },
       vertexShader: GRADE_VERT,
       fragmentShader: GRADE_FRAG,
     });
     this.composer.addPass(this.grade);
-    this.composer.addPass(new OutputPass());
+    // no OutputPass: the grade shader itself ends with ACES + sRGB so its
+    // grain and ordered dither work in display space (see GRADE_FRAG)
   }
 
   // ------------------------------------------------------------ init: world
@@ -280,6 +319,13 @@ class Game {
       onMirror: () => this._mirrorScare(),
       onSwitch: (rec) => this._toggleSwitch(rec),
       onDrip: () => this.audio.drip(),
+      onWasher: () => {
+        // touching it: half a turn of the drum, a lurch - then dead silence
+        this.audio.washer(-0.6);
+        this.shake = Math.max(this.shake, 0.1);
+        this._sub('洗衣机动了半圈，又停了。', '洗濯機が半周回って、止まった。', 3);
+        this._setFear(this.fear + 0.05);
+      },
       // zone handlers
       zone_kitchen: () => this._zoneKitchen(),
       zone_living: () => this._zoneLiving(),
@@ -1212,9 +1258,13 @@ class Game {
         const door = pick(swingDoors);
         if (door.open) {
           door.open = false; door.target = 0;
+          this.audio.doorSlam();
+        } else {
+          this.audio.knock(1); // nothing visible closed - a dull thud instead
         }
+      } else {
+        this.audio.doorSlam();
       }
-      this.audio.doorSlam();
     } else if (r < 0.32) {
       // a far door creaks open on its own (only doors away from the player)
       const swingDoors = this.level.doors.filter((d) =>
@@ -1224,7 +1274,6 @@ class Game {
         const door = pick(swingDoors);
         if (!door.open) {
           door.open = true; door.target = 1;
-          if (door.type === 'slide') door.slideTarget = -door.slideOffset;
           this.audio.doorOpen();
           this._sub('门……自己开了。', '扉が…一人で開いた。', 3);
           this._setFear(this.fear + 0.05);
@@ -1278,12 +1327,29 @@ class Game {
       this.audio.moan(0);
       this._setFear(this.fear + 0.15);
     } else {
-      this.audio.woodenCreak();
-      if (chance(0.5)) {
-        const s = pick(this.level.ghostSpawns);
-        if (Math.hypot(s.x - p.x, s.z - p.z) > 4.5) this.ghost.appearAt(s.x, s.y ?? 0, s.z, s.ry);
+      // ambience soup: the classic creak/ghost/scrape, plus the city at large
+      // beyond the storm - a siren across the rain, pipes knocking, and the
+      // washer starting by itself while you are the only one in the apartment
+      const w = Math.random();
+      if (w < 0.18) {
+        this.audio.siren(rand(-0.5, 0.5));
+        this._sub('雨声深处，有警笛在响。', '雨音の奥で、サイレンが鳴っている。', 3.4);
+      } else if (w < 0.38) {
+        this.audio.hammer(rand(-0.5, 0.5));
+        this._sub('墙里的水管，咚、咚地响。', '壁の配管が、ドン、ドンと鳴る。', 3);
+      } else if (w < 0.52 && p.x < -13.8 && p.z > 14.8) {
+        this.audio.washer(-0.6);
+        this.shake = Math.max(this.shake, 0.12);
+        this._sub('洗衣机……自己在转。', '洗濯機が…勝手に回っている。', 3.4);
+        this._setFear(this.fear + 0.06);
+      } else {
+        this.audio.woodenCreak();
+        if (chance(0.5)) {
+          const s = pick(this.level.ghostSpawns);
+          if (Math.hypot(s.x - p.x, s.z - p.z) > 4.5) this.ghost.appearAt(s.x, s.y ?? 0, s.z, s.ry);
+        }
+        if (chance(0.4)) this.audio.scrape();
       }
-      if (chance(0.4)) this.audio.scrape();
     }
 
     // the figure in the window - a rare extra, layered on top of any event
@@ -1362,7 +1428,10 @@ class Game {
       this.upperFlicker -= dt;
       for (const f of this.level.fluorescents) {
         if (f.z > 2 && f.z < 62 && f.light.position.y > 4) {
-          f.light.intensity = Math.sin(this.time * 50) > 0 ? f.base : 0.05;
+          const on = Math.sin(this.time * 50) > 0;
+          f.light.intensity = on ? f.base : 0.05;
+          // keep the tube glass in sync (level.update already set it this frame)
+          if (f.tube) f.tube.material = on ? this.level.tubeMat : this.level.tubeOffMat;
         }
       }
     }
@@ -1451,6 +1520,21 @@ class Game {
     // the storm's rain bed follows the same spatial cues as the wind.
     this.audio.setRain(clamp(0.3 + (this.playerPos.y > 2.5 ? 0.25 : 0) +
       (this.playerPos.z < 2.2 || this.playerPos.z > 56 ? 0.35 : 0), 0, 1));
+    // the fūrin in the child room rings when the wind breathes on it and
+    // someone is near enough to hear - a child's chime in a sealed apartment
+    const fu = this.level.props.furin;
+    if (fu && this.state === 'playing') {
+      const fd = Math.hypot(this.camera.position.x - fu.position.x, this.camera.position.z - fu.position.z);
+      if (fd < 7) {
+        this.furinT = (this.furinT ?? rand(4, 9)) - dt;
+        if (this.furinT <= 0) {
+          this.furinT = rand(6, 16);
+          this.audio.chime(clamp((fu.position.x - this.camera.position.x) / 7, -1, 1));
+        }
+      } else {
+        this.furinT = rand(3, 8);
+      }
+    }
     this._updateLightning(dt);
 
     if (this.nopost) this.renderer.render(this.scene, this.camera);
