@@ -1163,27 +1163,36 @@ class Game {
   _zoneCorridorMid() {
     // scripted: lights die one by one toward the player, then a silhouette
     if (this.finale) return;
-    this._sub('……灯，一盏盏熄灭。', '……電気が、消えていく。', 4);
+    this._sub('……灯，一盏盏熄灭。', '', 4);
     const lights = this.level.fluorescents.filter((f) => f.z > 20 && f.z < 58 && f.light.position.y < 3);
     lights.sort((a, b) => b.z - a.z);
     lights.forEach((f, i) => {
       setTimeout(() => { f.kill = true; }, 300 + i * 180);
     });
+    const t0 = 300 + lights.length * 180 + 300;
+    // 全黑后先给一拍死寂（报告 3.1-⑦：诡异平静为巨响铺垫）
+    setTimeout(() => this.audio.duck(), Math.max(600, t0 - 500));
     setTimeout(() => {
       this.audio.sting();
-      // one far light strobes behind the silhouette
+      // 尽头那盏灯复活并爆闪，充当人形身后的逆光（报告 3.4：逆光剪影）
       const back = lights.find((f) => Math.abs(f.z - 53.7) < 0.2);
-      if (back) back.boost = 2.6;
+      if (back) { back.kill = false; back.boost = 2.8; }
       if (this.monster.state === 'dormant') {
-        this.monster.spawn(new THREE.Vector3(0, 0, 55.5), 'stalk');
-        this.monster.tempLife = 2.4;
+        // 距离突变（报告 3.3）：从 25m 外的雾里挪到 12m，肉眼一定看得见
+        this.monster.spawn(new THREE.Vector3(0, 0, 42), 'stalk');
+        this.monster.tempLife = 3.6;
+        this.monster.group.rotation.y = Math.PI; /* 面向玩家 */
+        // 头顶逆光勾出肩线与头部亮边
+        const rim = new THREE.PointLight(0xcfe0ea, 3.4, 16, 1.6);
+        rim.position.set(0, 2.5, 45);
+        this.scene.add(rim);
+        setTimeout(() => rim.removeFromParent(), 3700);
+        // 消失前最后一记重踏——预告「它是能追你的」
+        setTimeout(() => { if (!this.finale) this.audio.thud(); }, 3300);
       }
+      this._sub('走廊尽头……站着什么。', '', 3.4);
       this._setFear(0.55);
-    }, 300 + lights.length * 180 + 300);
-    setTimeout(() => {
-      for (const f of lights) { f.kill = false; f.boost = 0; }
-      this._setFear(this.fear * 0.5);
-    }, 300 + lights.length * 180 + 3400);
+    }, t0);
   }
 
   // ------------------------------------------------------------ finale / ending
