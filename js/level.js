@@ -511,20 +511,44 @@ export class Level {
     // center the body at ±1.075 so it sits proud of the wall, not half-buried)
     const bx = sgn * 1.075;
     this.box(bx, z, 0.15, 0.08, 1.5, 0.55, M.rust, { geo: { ao: 'wall', uv: [1.8, 0.8] } });
-    // vertical rib columns on the front face
+    // vertical rib columns on the front face (deeper profile so they read as
+    // ribs in low-res, not noise)
     const ribMat = stdMat({ color: 0x4a4f56, roughness: 0.6, metalness: 0.22 });
     for (let i = 0; i < 7; i++) {
-      this.box(bx - sgn * 0.055, z - 0.63 + i * 0.21, 0.22, 0.05, 0.05, 0.42, ribMat, {
+      this.box(bx - sgn * 0.075, z - 0.63 + i * 0.21, 0.22, 0.065, 0.07, 0.46, ribMat, {
         geo: { ao: 'none' }, collide: false, cast: false,
       });
     }
     // top grill + old valve knob
     this.box(bx, z, 0.72, 0.08, 1.4, 0.03, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
+    // 落地支脚 ×2：一眼读懂「立式暖气片」的剪影
+    for (const fz of [z - 0.6, z + 0.6]) {
+      this.box(bx, fz, 0.035, 0.1, 0.09, 0.09, M.rust, { geo: { ao: 'none' }, collide: false, cast: false });
+    }
+    // 连接墙面的供热横管（上端）+ 管箍：解释「它是接在墙上的」
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, sgn > 0 ? 0.16 : 0.16, 6),
+      stdMat({ color: 0x5a4a42, roughness: 0.75, metalness: 0.25 }));
+    pipe.rotation.z = Math.PI / 2;
+    pipe.position.set(bx + sgn * 0.11, 0.68, z);
+    this.scene.add(pipe);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.03, 6), M.darkMetal);
+    collar.rotation.z = Math.PI / 2;
+    collar.position.set(bx + sgn * 0.05, 0.68, z);
+    this.scene.add(collar);
     const valve = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 6),
       stdMat({ color: 0x7a2a24, roughness: 0.5, metalness: 0.2 }));
     valve.rotation.z = Math.PI / 2;
     valve.position.set(bx - sgn * 0.06, 0.34, z - 0.62);
     this.scene.add(valve);
+    // 阀门十字把手（红色小十字，远看也能读出「这是个阀门」）
+    const vh = new THREE.Group();
+    for (const r of [0, Math.PI / 2]) {
+      const bar = new THREE.Mesh(makeBoxGeo(0.008, 0.075, 0.02), stdMat({ color: 0x8a3028, roughness: 0.55 }));
+      bar.rotation.x = r;
+      vh.add(bar);
+    }
+    vh.position.set(bx - sgn * 0.1, 0.34, z - 0.62);
+    this.scene.add(vh);
   }
 
   _buildTrim() {
@@ -1012,6 +1036,14 @@ export class Level {
       this.box(px, pz + 0.015, 1.335, 0.34, 0.02, 0.03, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
       this.box(px, pz + 0.015, 1.765, 0.34, 0.02, 0.03, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
     }
+    // 第三张：倒着挂的旧照片（错位恐怖，报告 1.3/3.4）——
+    // 和旁边两张并排却明显不对，玩家路过会多看一眼
+    const flip = this.decalWall(-4.9, 7.63, 1.55, 0.34, 0.42, t.photo, 's');
+    flip.rotation.z = Math.PI;
+    this.box(-4.9 - 0.185, 7.645, 1.55, 0.03, 0.02, 0.5, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
+    this.box(-4.9 + 0.185, 7.645, 1.55, 0.03, 0.02, 0.5, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
+    this.box(-4.9, 7.645, 1.335, 0.34, 0.02, 0.03, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
+    this.box(-4.9, 7.645, 1.765, 0.34, 0.02, 0.03, M.darkWood, { geo: { ao: 'none' }, collide: false, cast: false });
     this.box(-7.7, 14.6, 0, 0.32, 0.22, 0.14, M.darkWood, { geo: { ao: 'wall' } });
     const radioAnt = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.4, 4), M.darkMetal);
     radioAnt.position.set(-7.7, 0.34, 14.6);
@@ -1331,6 +1363,11 @@ export class Level {
     clock.position.set(1.075, 1.7, 26.5);
     clock.rotation.z = Math.PI / 2;
     this.scene.add(clock);
+    // 挂歪的旧照片（非对称设计，报告 3.4）：就在挂钟旁边，歪得刚好能注意到
+    const tilt = this.decalWall(1.085, 25.4, 1.58, 0.3, 0.38, t.photo, 'w');
+    tilt.rotation.z = -0.09;
+    // 挂钟倒走（日常异化，报告 3.2）：靠近时偶尔倒走几秒再复原
+    this.props.clock = { mesh: clock, state: 'normal', timer: rand(30, 70) };
     // light switches are created in _buildLights (they need the fixture list
     // to link to) - see the end of _buildLights.
     // upper-floor window (NORTH wall x=-1.0, inner face -0.9: the pane must
@@ -1380,11 +1417,44 @@ export class Level {
     // windows (moonlight) — x is the wall's inner face so the sill/plane/bars
     // sit proud of it, not buried in the wall
     this._window(-8.3, 2.6, 1.0, 'e');
-    this._window(-8.3, 14.0, 1.0, 'e');
+    // 一排完好窗中唯一一扇黑的（报告 3.4 非对称设计）：
+    // 玻璃碎了、月光进不来，路过时这段走廊明显更暗
+    this._window(-8.3, 14.0, 1.0, 'e', { dark: true });
     this._window(-13.7, 10.75, 1.0, 'e');
 
     // blood stain under the futon corner
     this.decalFloor(-13.4, 15.0, 0.9, 1.1, t.blood, 0.1);
+
+    // 手电电池 ×3（报告 2.2：第二阶段的资源会被打破，但先给足安全感）
+    this._battery(0.62, -0.15);
+    this._battery(-5.05, 13.05);
+    this._battery(-0.55, 33.6);
+  }
+
+  /* 一节手电电池：横放在地上的小圆柱，淡色环带在黑暗里隐约可见 */
+  _battery(x, z) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.032, 0.11, 8),
+      stdMat({ color: 0x74563a, roughness: 0.55, metalness: 0.35 }));
+    body.rotation.z = Math.PI / 2;
+    g.add(body);
+    const band = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.033, 0.033, 0.028, 8),
+      basicMat({ color: 0xd8cfae }));
+    band.rotation.z = Math.PI / 2;
+    band.position.x = 0.03;
+    g.add(band);
+    const nub = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.012, 8),
+      stdMat({ color: 0xa9a9a4, roughness: 0.4, metalness: 0.5 }));
+    nub.rotation.z = Math.PI / 2;
+    nub.position.x = 0.058;
+    g.add(nub);
+    g.position.set(x, 0.042, z);
+    g.rotation.y = rand(0, Math.PI * 2);
+    this.scene.add(g);
+    const it = this.regInteractable(g, '手电电池', 2.0, () => this.handlers.onBattery?.(g));
+    (this.props.batteries ||= []).push({ mesh: g, interactable: it });
   }
 
   _candle(x, z, yTop) {
@@ -1416,9 +1486,14 @@ export class Level {
     return paper;
   }
 
-  _window(x, z, y, face) {
+  _window(x, z, y, face, opts = {}) {
     const M = this.materials;
-    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), M.moonWin);
+    const dark = !!opts.dark;
+    // 碎/被封死的黑窗：无月光、无雨痕，只剩一块更暗的破玻璃
+    const paneMat = dark
+      ? stdMat({ color: 0x070a0e, roughness: 0.35, metalness: 0.1 })
+      : M.moonWin;
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), paneMat);
     const lx = face === 'e' ? 0.02 : face === 'w' ? -0.02 : 0;
     const lz = face === 'n' ? -0.02 : face === 's' ? 0.02 : 0;
     win.position.set(x + lx, y, z + lz);
@@ -1426,30 +1501,41 @@ export class Level {
     else if (face === 'w') win.rotation.y = -Math.PI / 2;
     else if (face === 's') win.rotation.y = Math.PI;
     this.scene.add(win);
-    // rain-streak overlay: a transparent second pane, just in front of the
-    // moonlit glass, ties the storm ambience to the visuals.
-    const rainMat = basicMat({
-      map: this.tex.rainStreaks, transparent: true, opacity: 0.55,
-      depthWrite: false, side: THREE.DoubleSide,
-    });
-    const rain = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), rainMat);
-    const ox = face === 'e' ? 0.005 : face === 'w' ? -0.005 : 0;
-    const oz = face === 'n' ? -0.005 : face === 's' ? 0.005 : 0;
-    rain.position.set(win.position.x + ox, win.position.y, win.position.z + oz);
-    rain.rotation.copy(win.rotation);
-    rain.renderOrder = 3;
-    this.scene.add(rain);
-    const light = new THREE.PointLight(0x6a8cb4, 0.8, 7, 1.9);
-    // place the moonlight source outside the building:
-    // north=-x, south=+x, east=+z, west=-z
-    light.position.set(
-      x + (face === 'n' ? -0.6 : face === 's' ? 0.6 : 0), y,
-      z + (face === 'e' ? 0.6 : face === 'w' ? -0.6 : 0),
-    );
-    this.scene.add(light);
-    this.windowLights.push(light);
+    if (!dark) {
+      // rain-streak overlay: a transparent second pane, just in front of the
+      // moonlit glass, ties the storm ambience to the visuals.
+      const rainMat = basicMat({
+        map: this.tex.rainStreaks, transparent: true, opacity: 0.55,
+        depthWrite: false, side: THREE.DoubleSide,
+      });
+      const rain = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), rainMat);
+      const ox = face === 'e' ? 0.005 : face === 'w' ? -0.005 : 0;
+      const oz = face === 'n' ? -0.005 : face === 's' ? 0.005 : 0;
+      rain.position.set(win.position.x + ox, win.position.y, win.position.z + oz);
+      rain.rotation.copy(win.rotation);
+      rain.renderOrder = 3;
+      this.scene.add(rain);
+    }
     const barMat = stdMat({ color: 0x0c0e12, roughness: 0.65, metalness: 0.25 });
     const frameMat = stdMat({ color: 0x2e2620, roughness: 0.85 });
+    if (dark && (face === 'e' || face === 'w')) {
+      // 黑窗上残留的裂痕：两道交叉的浅色细棱，近看才认得出是碎玻璃
+      const fx = x + (face === 'e' ? 0.025 : -0.025);
+      const crackMat = stdMat({ color: 0x39434b, roughness: 0.4 });
+      this.box(fx, z - 0.1, y + 0.08, 0.02, 0.62, 0.018, crackMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z + 0.14, y - 0.06, 0.02, 0.5, 0.014, crackMat, { geo: { ao: 'none' }, collide: false, cast: false });
+    }
+    if (!dark) {
+      const light = new THREE.PointLight(0x6a8cb4, 0.8, 7, 1.9);
+      // place the moonlight source outside the building:
+      // north=-x, south=+x, east=+z, west=-z
+      light.position.set(
+        x + (face === 'n' ? -0.6 : face === 's' ? 0.6 : 0), y,
+        z + (face === 'e' ? 0.6 : face === 'w' ? -0.6 : 0),
+      );
+      this.scene.add(light);
+      this.windowLights.push(light);
+    }
     if (face === 'e' || face === 'w') {
       const fx = x + (face === 'e' ? 0.03 : -0.03);
       // window frame: lintel, stool, two jambs + a cross mullion (proud of the
@@ -1500,8 +1586,9 @@ export class Level {
     head.position.y = 0.32;
     group.add(head);
     const face = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), basicMat({ map: this.tex.dollFace }));
-    face.position.set(0, 0.32, 0.062);
-    group.add(face);
+    // 脸作为头的子节点：头部凝视追踪时脸跟着一起转
+    face.position.set(0, 0, 0.062);
+    head.add(face);
     const skirt = new THREE.Mesh(makeBoxGeo(0.18, 0.12, 0.14, { jitter: 0.004 }), stdMat({ color: 0x7a1a1a, roughness: 0.9 }));
     skirt.position.y = 0.06;
     group.add(skirt);
@@ -1730,6 +1817,19 @@ export class Level {
 
   update(dt, time, playerPos = null) {
     this.updateDoors(dt);
+    // 人偶的头会极缓慢地转向玩家（凝视恐怖，报告 1.4）——
+    // 只在近处生效、转速慢到「感觉不对但说不出为什么」；远禹时保持原样
+    const doll = this.props.doll;
+    if (doll && playerPos) {
+      const ddx = playerPos.x - doll.mesh.position.x;
+      const ddz = playerPos.z - doll.mesh.position.z;
+      if (ddx * ddx + ddz * ddz < 36) {
+        let local = Math.atan2(ddx, ddz) - doll.mesh.rotation.y;
+        local = Math.atan2(Math.sin(local), Math.cos(local));
+        const target = clamp(local, -1.15, 1.15);
+        doll.head.rotation.y += (target - doll.head.rotation.y) * Math.min(1, dt * 0.55);
+      }
+    }
     for (const c of this.candles) {
       const v = 0.75 + 0.25 * Math.sin(time * 9 + c.phase) * Math.sin(time * 13.7 + c.phase * 2);
       c.light.intensity = c.base * clamp(v + rand(-0.08, 0.08), 0.3, 1.2);
@@ -1743,6 +1843,23 @@ export class Level {
       this.props.ropes[i].rotation.x = Math.cos(time * 0.55 + i) * 0.03;
     }
     if (this.props.mobile) this.props.mobile.rotation.y = time * 0.5;
+    // 挂钟倒走：玩家在 5m 内时偶尔触发，指针退回一截、几秒后悄悄走回原位
+    const clk = this.props.clock;
+    if (clk && playerPos) {
+      clk.timer -= dt;
+      const cdx = playerPos.x - clk.mesh.position.x;
+      const cdz = playerPos.z - clk.mesh.position.z;
+      const near = (cdx * cdx + cdz * cdz) < 25;
+      if (clk.state === 'normal' && near && clk.timer <= 0 && Math.random() < 0.01) {
+        clk.state = 'back';
+        clk.timer = rand(2.5, 5);
+        clk.mesh.material.map = this.tex.clockBack;
+      } else if (clk.state === 'back' && clk.timer <= 0) {
+        clk.state = 'normal';
+        clk.timer = rand(50, 110);
+        clk.mesh.material.map = this.tex.clock;
+      }
+    }
     // fūrin sways on the wind: gusty, slightly arrhythmic (it should feel
     // breathed-on rather than pendulum-neat)
     if (this.props.furin) {

@@ -782,7 +782,7 @@ function eyesWallTex(rng) {
   return toTexture(c);
 }
 
-function clockTex() {
+function clockTex(back = false) {
   const c = canvas(128, 128);
   const ctx = c.getContext('2d');
   const rng = mulberry32(21);
@@ -802,11 +802,13 @@ function clockTex() {
     ctx.lineTo(64 + Math.sin(a) * 54, 64 - Math.cos(a) * 54);
     ctx.stroke();
   }
-  // stopped at 3:33
+  // 停在 3:33；back 变体 = 两根针都从原位逆时针退回一截（时间倒走了）
+  const hb = Math.PI * 1.07 + (back ? -0.55 : 0);
+  const mb = Math.PI * 0.12 + (back ? -1.9 : 0);
   ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.sin(Math.PI * 1.07) * 28, 64 - Math.cos(Math.PI * 1.07) * 28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.sin(hb) * 28, 64 - Math.cos(hb) * 28); ctx.stroke();
   ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.sin(Math.PI * 0.12) * 44, 64 - Math.cos(Math.PI * 0.12) * 44); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.sin(mb) * 44, 64 - Math.cos(mb) * 44); ctx.stroke();
   // crack
   ctx.strokeStyle = 'rgba(40,36,30,0.7)';
   ctx.lineWidth = 2;
@@ -878,7 +880,8 @@ function tvFaceTex(rng) {
 function mirrorTex(rng) {
   const c = canvas(128, 256);
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#10161a';
+  // 镜面稍亮一点，让人影能以「暗剪影」形式衬出来（报告 3.4：逆光剪影）
+  ctx.fillStyle = '#1c2429';
   ctx.fillRect(0, 0, 128, 256);
   const img = ctx.getImageData(0, 0, 128, 256);
   fillNoise(img, rng, { amp: 7, base: img.data.slice() });
@@ -890,15 +893,27 @@ function mirrorTex(rng) {
     ctx.moveTo(x, 0); ctx.lineTo(x + (rng() - 0.5) * 30, 256);
     ctx.stroke();
   }
-  // a faint standing figure that is not you
-  ctx.fillStyle = 'rgba(150,158,162,0.15)';
-  ctx.beginPath(); ctx.ellipse(64, 84, 14, 18, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(64, 152, 20, 48, 0, 0, 7); ctx.fill();
-  ctx.fillRect(36, 106, 10, 54);
-  ctx.fillRect(82, 106, 10, 54);
-  ctx.fillStyle = 'rgba(10,10,12,0.4)';
-  ctx.beginPath(); ctx.ellipse(58, 82, 3, 4, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(70, 82, 3, 4, 0, 0, 7); ctx.fill();
+  // a standing figure that is not you —— 提高到能一眼认出「那是个人」的剪影，
+  // 但保留模糊与歪头（恐怖谷：像人又不像人）；报告 1.4
+  ctx.save();
+  ctx.translate(64, 120);
+  ctx.rotate(0.06); /* 头与身体整体微微歪斜 */
+  // 躯干（暗色，比镜面暗一档）
+  ctx.fillStyle = 'rgba(8,10,12,0.82)';
+  ctx.beginPath(); ctx.ellipse(0, 32, 20, 48, 0, 0, 7); ctx.fill();
+  // 头
+  ctx.beginPath(); ctx.ellipse(-2, -34, 15, 19, 0.08, 0, 7); ctx.fill();
+  // 垂在两侧的手臂
+  ctx.fillRect(-36, -16, 11, 58);
+  ctx.fillRect(25, -16, 11, 58);
+  // 苍白的一小块脸（在暗剪影里唯一亮的东西）
+  ctx.fillStyle = 'rgba(168,172,168,0.5)';
+  ctx.beginPath(); ctx.ellipse(-4, -38, 8, 10, 0.08, 0, 7); ctx.fill();
+  // 两点红眼：凝视恐惧（报告 1.4「它在看着我」）
+  ctx.fillStyle = 'rgba(200,45,52,0.75)';
+  ctx.beginPath(); ctx.ellipse(-7, -39, 2.2, 1.6, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, -40, 2.2, 1.6, 0, 0, 7); ctx.fill();
+  ctx.restore();
   ctx.strokeStyle = 'rgba(220,228,232,0.5)';
   ctx.beginPath(); ctx.moveTo(20, 20); ctx.lineTo(48, 90); ctx.lineTo(44, 120); ctx.lineTo(70, 190); ctx.stroke();
   stains(ctx, 128, 256, '#0a0e10', 12, rng);
@@ -1063,6 +1078,7 @@ export function createTextures() {
   T.tile = tileTex(mulberry32(131));
   T.mailbox = mailboxTex(mulberry32(132));
   T.rainStreaks = rainStreaks(mulberry32(133));
+  T.clockBack = clockTex(true);
   return T;
 }
 

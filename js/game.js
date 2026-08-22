@@ -176,6 +176,18 @@ const GRADE_FRAG = `
 `;
 
 // ---------------------------------------------------------------- game
+/* 伪横屏：物理触控增量 → 内容坐标系。
+   舞台被 rotate(90deg) 后，物理「上下」在内容空间是「左右」；
+   用户逆时针横握手机（顶部朝左）时此映射让手势方向与视觉一致 */
+function touchDeltaToContent(dx, dy) {
+  if (typeof window.__forcedLandscape === 'function' && window.__forcedLandscape()) {
+    return [dy, -dx];
+  }
+  return [dx, dy];
+}
+
+// ------------------------------------------------------------ init: renderer
+
 class Game {
   constructor() {
     this.audio = new AudioEngine();
@@ -187,6 +199,9 @@ class Game {
     this.startTime = 0;
     this.noteOpen = false;
     this.blackout = false;
+    this.battery = 100;   /* 手电电量（报告 2.2：第二阶段资源被打破） */
+    this.batteryHudT = 0;
+    this._flashMul = 1;
     this.finale = false;
     this.phoneRinging = false;
     this.phoneArmed = false;
@@ -231,7 +246,7 @@ class Game {
     requestAnimationFrame(this._loop);
   }
 
-  // ------------------------------------------------------------ init: renderer
+// ------------------------------------------------------------ init: renderer
   _initRenderer() {
     this.canvas = $('game');
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance' });
@@ -253,18 +268,55 @@ class Game {
     setSnapResolution(RENDER_W, RENDER_H);
     window.addEventListener('resize', () => this._fitCanvas());
     this._fitCanvas();
+
+    /* 手机适配：动态降分辨率（低端机保帧率）。
+       档位 1 → 0.8 → 0.7 → 0.6；平均帧率 <38 降一档，>57 且冷却过才升回 */
+    this.resScale = 1;
+    this.resCooldown = 0;
+    this.fpsAcc = 0;
+    this.fpsN = 0;
+  }
+
+  _applyResolution() {
+    const w = Math.round(RENDER_W * this.resScale);
+    const h = Math.round(RENDER_H * this.resScale);
+    this.renderer.setSize(w, h, false);
+    if (this.composer) this.composer.setSize(w, h);
+    setSnapResolution(w, h);
+  }
+
+  /* 每 2 秒结算一次平均帧率，带迟滞与冷却防抖动 */
+  _autoResolution(dt) {
+    this.fpsAcc += dt; this.fpsN++;
+    if (this.resCooldown > 0) { this.resCooldown -= dt; return; }
+    if (this.fpsAcc < 2 || this.fpsN < 60) return;
+    const fps = this.fpsN / this.fpsAcc;
+    this.fpsAcc = 0; this.fpsN = 0;
+    const steps = [1, 0.8, 0.7, 0.6];
+    let i = steps.indexOf(this.resScale);
+    if (i < 0) i = 0;
+    if (fps < 38 && i < steps.length - 1) {
+      this.resScale = steps[i + 1];
+      this.resCooldown = 10;
+      this._applyResolution();
+    } else if (fps > 57 && i > 0) {
+      this.resScale = steps[i - 1];
+      this.resCooldown = 10;
+      this._applyResolution();
+    }
   }
 
   _fitCanvas() {
-    const w = window.innerWidth, h = window.innerHeight;
+    /* 伪横屏时逻辑视口宽高互换（舞台已旋转 90°） */
+    var forced = typeof window.__forcedLandscape === 'function' && window.__forcedLandscape();
+    const w = forced ? window.innerHeight : window.innerWidth;
+    const h = forced ? window.innerWidth : window.innerHeight;
     const target = RENDER_W / RENDER_H;
-    if (w / h > target) {
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${w / target}px`;
-    } else {
-      this.canvas.style.height = `${h}px`;
-      this.canvas.style.width = `${h * target}px`;
-    }
+    /* 手机适配：任何方向都完整显示整个 16:9 画面（contain 缩放），
+       竖屏时上下留黑边、不再横向裁切掉两侧的门和线索 */
+    const scale = Math.min(w / RENDER_W, h / RENDER_H);
+    this.canvas.style.width = `${Math.round(RENDER_W * scale)}px`;
+    this.canvas.style.height = `${Math.round(RENDER_H * scale)}px`;
   }
 
   _initScene() {
@@ -315,6 +367,7 @@ class Game {
       onTV: () => this._toggleTV(),
       onBell: () => this._ringBell(),
       onDoll: () => this._lookDoll(),
+      onBattery: (m) => this._pickupBattery(m),
       onLamp: () => this._toggleLamp(),
       onMirror: () => this._mirrorScare(),
       onSwitch: (rec) => this._toggleSwitch(rec),
@@ -593,6 +646,7 @@ class Game {
     const joyMove = (t) => {
       const c = joyCenter();
       let dx = t.clientX - c.x, dy = t.clientY - c.y;
+      [dx, dy] = touchDeltaToContent(dx, dy);
       const d = Math.hypot(dx, dy);
       if (d > TRAVEL) { dx *= TRAVEL / d; dy *= TRAVEL / d; }
       this.touchMove.x = dx / TRAVEL;
@@ -636,10 +690,11 @@ class Game {
       if (!canLook()) return;
       for (const t of e.changedTouches) {
         if (t.identifier !== this._lookId) continue;
-        const dx = t.clientX - this._lookLX;
-        const dy = t.clientY - this._lookLY;
+        const dxRaw = t.clientX - this._lookLX;
+        const dyRaw = t.clientY - this._lookLY;
         this._lookLX = t.clientX;
         this._lookLY = t.clientY;
+        const [dx, dy] = touchDeltaToContent(dxRaw, dyRaw);
         const eul = this.camera.rotation;
         eul.order = 'YXZ';
         // 0.85x of the mouse sens: a full-thumb swipe (~250px) turns ~170°
@@ -666,8 +721,7 @@ class Game {
     });
     tap($('btn-flash'), () => {
       if (this.state !== 'playing') return;
-      this.flashOn = !this.flashOn;
-      $('btn-flash').classList.toggle('on', this.flashOn);
+      this._toggleFlash();
     });
     const runBtn = $('btn-run');
     runBtn.addEventListener('touchstart', (e) => {
@@ -688,7 +742,8 @@ class Game {
 
     // portrait hint
     const hint = $('rotate-hint');
-    const orient = () => hint.classList.toggle('hidden', window.innerWidth >= window.innerHeight);
+    const orient = () => hint.classList.toggle('hidden',
+      window.innerWidth >= window.innerHeight || (window.__forcedLandscape && window.__forcedLandscape()));
     orient();
     window.addEventListener('resize', orient);
 
@@ -699,17 +754,18 @@ class Game {
   }
 
   // ------------------------------------------------------------ UI helpers
-  _sub(cn, ja = '', dur = 3.4) {
+  // 双语精简：字幕只出中文（大标题的日语除外，见 index.html）
+  _sub(cn, _ja = '', dur = 3.4) {
     const s = $('subtitle');
     s.querySelector('.cn').textContent = cn;
-    s.querySelector('.ja').textContent = ja;
+    s.querySelector('.ja').textContent = '';
     s.classList.add('on');
     clearTimeout(this.subtitleTimer);
     this.subtitleTimer = setTimeout(() => s.classList.remove('on'), dur * 1000);
   }
 
-  _setObjective(cn, ja = '') {
-    $('objective').innerHTML = `<div>${cn}</div>${ja ? `<div class="obj-ja">${ja}</div>` : ''}`;
+  _setObjective(cn) {
+    $('objective').innerHTML = `<div>${cn}</div>`;
   }
 
   _prompt(text) {
@@ -799,7 +855,7 @@ class Game {
       this._interact();
     }
     if (e.code === 'KeyF' && this.state === 'playing') {
-      this.flashOn = !this.flashOn;
+      this._toggleFlash();
     }
     if (e.code === 'KeyR' && this.state === 'playing') location.reload();
   }
@@ -859,9 +915,9 @@ class Game {
     this.noteOpen = true;
     this.audio.paperRustle();
     $('note-item').textContent = note.item;
-    $('note-title').innerHTML = `${note.title}<span class="n-ja-title">／${note.titleJa}</span>`;
+    $('note-title').innerHTML = `${note.title}`;
     $('note-cn').textContent = note.cn;
-    $('note-ja').textContent = note.ja;
+    $('note-ja').textContent = '';
     $('note').classList.remove('hidden');
     if (this._touchUI) this._touchUI.classList.add('hidden');
     this.controls.unlock();
@@ -1001,7 +1057,9 @@ class Game {
     this.ghost.life = 1.4;
     this.audio.whisper(-0.2, 1.6);
     this.audio.sting();
-    this._sub('镜子里……站着人。', '鏡の中に…誰かが、立っている。', 3.2);
+    this._sub('镜子里……站着人。', '', 3.2);
+    // meta 恐惧（仅桌面版构建）：闪现玩家自己的脸——「镜子里的人是你」
+    if (window.__meta && !this.touchMode) window.__meta.flashFace(this);
     this._setFear(this.fear + 0.18);
     this.shake = Math.max(this.shake, 0.4);
   }
@@ -1129,6 +1187,65 @@ class Game {
   }
 
   // ------------------------------------------------------------ finale / ending
+  /* 手电开关（带电量检查）：没电时按不开，只提示 */
+  _toggleFlash() {
+    if (this.flashOn) {
+      this.flashOn = false;
+    } else if (this.battery <= 0) {
+      this._sub('手电筒一点反应也没有……没电了。', '', 2.6);
+      return;
+    } else {
+      this.flashOn = true;
+    }
+    const btn = $('btn-flash');
+    if (btn) btn.classList.toggle('on', this.flashOn);
+  }
+
+  /* 电量系统（报告 2.2：第二阶段打破理智量化）——
+     开灯时缓慢耗电，终章加倍；低于 25% 闪烁；归零强制熄灭；
+     场景里三节电池可拾取回充。 */
+  _updateBattery(dt) {
+    if (this.flashOn) {
+      const rate = this.finale ? 1.1 : 0.55; /* 满电可持续约 180s，终章约 90s */
+      this.battery = Math.max(0, this.battery - rate * dt);
+      if (this.battery <= 0) {
+        this.flashOn = false;
+        const btn = $('btn-flash');
+        if (btn) btn.classList.remove('on');
+        this._sub('手电筒彻底没电了。', '', 3.2);
+        this._setFear(Math.min(1, this.fear + 0.12));
+      }
+    }
+    // 低电闪烁系数（应用到手电强度上）
+    if (this.flashOn && this.battery < 25) {
+      this._flashMul = Math.random() < 0.05 ? rand(0.12, 0.5) : (this._flashMul ?? 1) + (1 - (this._flashMul ?? 1)) * Math.min(1, dt * 9);
+    } else {
+      this._flashMul = 1;
+    }
+    // HUD 节流刷新
+    this.batteryHudT -= dt;
+    if (this.batteryHudT <= 0) {
+      this.batteryHudT = 0.2;
+      const bar = $('battery');
+      if (bar) {
+        bar.classList.toggle('low', this.battery < 25);
+        $('battery-fill').style.width = this.battery + '%';
+      }
+    }
+  }
+
+  _pickupBattery(mesh) {
+    const before = this.battery;
+    this.battery = Math.min(100, this.battery + 55);
+    mesh.removeFromParent();
+    const list = this.level.interactables;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].mesh === mesh) { list.splice(i, 1); break; }
+    }
+    this.audio.switchClick();
+    this._sub(before >= 100 ? '捡到一节电池，先揣兕里了。' : '换上电池，光稳了下来。', '', 2.4);
+  }
+
   _startFinale() {
     this.finale = true;
     this.audio.duck();
@@ -1155,7 +1272,7 @@ class Game {
     const t = Math.round((performance.now() - this.startTime) / 1000);
     const mm = String(Math.floor(t / 60)).padStart(2, '0');
     const ss = String(t % 60).padStart(2, '0');
-    $('end-text').innerHTML = `${END_TEXT}<br><span style="font-size:12px;color:#6b7278">${END_TEXT_JA}</span>`;
+    $('end-text').innerHTML = `${END_TEXT}`;
     $('end-stats').textContent = `用时 ${mm}:${ss} ／ 线索 3/3 ／ 醒来次数 ${this.scareCount}`;
     const fade = $('fade');
     fade.classList.add('white');
@@ -1370,11 +1487,14 @@ class Game {
     this.lastT = now;
     this.time += dt;
 
+    if (this.touchMode) this._autoResolution(dt);
+
     if (this.state === 'playing' || this.state === 'scared') {
       const scared = this.state === 'scared';
       if (!scared) this._updatePlayer(dt);
       this._updateInteractPrompt();
       this._updateDirector(dt);
+      this._updateBattery(dt);
     }
 
     this.level.update(dt, this.time, this.camera.position);
@@ -1687,7 +1807,7 @@ class Game {
       // Stronger roll-off: near a wall the beam must fall to ~15% (not 35%),
       // otherwise a 0.3m hotspot still accumulates ~15 radiance -> near-white.
       const close = clamp((nearWall - 0.3) / 1.4, 0.15, 1);
-      flashI = 4.6 * close;
+      flashI = 4.6 * close * (this._flashMul ?? 1);
       const nearMonster = this.monster.state === 'stalk' || this.monster.state === 'chase';
       const md = Math.hypot(this.monster.pos.x - this.playerPos.x, this.monster.pos.z - this.playerPos.z);
       if (nearMonster && md < 5) {

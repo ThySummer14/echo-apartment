@@ -31,7 +31,8 @@
     inset: 0;
   }
   canvas#game {
-    position: fixed; inset: 0;
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     background: #000;
@@ -120,6 +121,27 @@
     border-left: 3px solid var(--red-dim);
     padding-left: 12px;
   }
+  /* 手电电量条：细条贴在目标提示下方，低电量变红并闪烁（报告 2.2：理智量化被打破） */
+  #battery {
+    position: fixed; z-index: 11;
+    top: 64px; left: 29px;
+    width: 92px; height: 7px;
+    background: rgba(255,255,255,0.10);
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #battery-fill {
+    height: 100%; width: 100%;
+    background: #9fb8a8;
+    border-radius: 4px;
+    transition: width 0.25s linear;
+  }
+  #battery.low #battery-fill {
+    background: #c8404a;
+    animation: batt-blink 0.9s steps(2) infinite;
+  }
+  @keyframes batt-blink { 50% { opacity: 0.35; } }
   #objective .obj-ja {
     font-size: 11px; opacity: 0.75; margin-top: 3px; letter-spacing: 0.08em;
   }
@@ -211,7 +233,7 @@
   #note .n-ja { font-size: 12.5px; line-height: 1.8; color: #4c4436; margin-top: 14px; white-space: pre-wrap; }
   #note .n-ja-title { font-size: 13px; color: #6d6350; font-weight: 400; letter-spacing: 0.08em; }
   #note .n-hint { margin-top: 20px; font-size: 12px; color: #6d6350; letter-spacing: 0.2em; text-align: center; }
-  #note .n-item { position: absolute; top: 22px; right: 26px; font-size: 11px; color: #7a6f55; }
+  #note .n-item { position: absolute; top: 22px; left: 26px; font-size: 11px; color: #7a6f55; }
 
   /* ---------- pause ---------- */
   #pause { background: rgba(2,4,6,0.86); z-index: 32; cursor: pointer; }
@@ -275,7 +297,9 @@
   #touch-ui { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
   #touch-ui.hidden { display: none !important; }
   #joy-zone {
-    position: absolute; left: 4%; bottom: 5%;
+    position: absolute;
+    left: calc(4% + env(safe-area-inset-left, 0px));
+    bottom: calc(5% + env(safe-area-inset-bottom, 0px));
     width: 128px; height: 128px;
     pointer-events: auto;
   }
@@ -307,21 +331,32 @@
   }
   .tbtn:active, .tbtn.on { background: rgba(80, 120, 135, 0.55); border-color: rgba(200, 230, 240, 0.7); }
   #btn-interact {
-    right: 5%; bottom: 7%;
+    right: calc(5% + env(safe-area-inset-right, 0px));
+    bottom: calc(7% + env(safe-area-inset-bottom, 0px));
     width: 84px; height: 84px; font-size: 16px;
   }
   #btn-interact.avail { border-color: #9fd8d0; box-shadow: 0 0 14px rgba(120, 210, 195, 0.5); }
   #btn-flash {
-    right: 26%; bottom: 20%;
+    right: calc(26% + env(safe-area-inset-right, 0px));
+    bottom: calc(20% + env(safe-area-inset-bottom, 0px));
     width: 58px; height: 58px;
   }
   #btn-run {
-    right: 6%; bottom: 34%;
+    right: calc(6% + env(safe-area-inset-right, 0px));
+    bottom: calc(34% + env(safe-area-inset-bottom, 0px));
     width: 58px; height: 58px;
   }
+  /* 手机适配：暂停键挪到左上角——容器会在右上角悬浮官方按钮（分享/⋯），
+     整个右上区域必须留空；带刘海安全区 */
   #btn-pause {
-    right: 12px; top: 12px;
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    top: calc(12px + env(safe-area-inset-top, 0px));
     width: 42px; height: 42px; border-radius: 8px; font-size: 15px;
+  }
+  /* 触屏模式下目标提示下移，给左上角的暂停键让位 */
+  body.touch #objective {
+    top: calc(66px + env(safe-area-inset-top, 0px));
+    left: calc(14px + env(safe-area-inset-left, 0px));
   }
   @media (max-width: 760px) {
     #objective { font-size: 12px; top: 14px; left: 14px; }
@@ -329,6 +364,25 @@
     .tbtn { font-size: 12px; }
     #btn-interact { width: 72px; height: 72px; font-size: 14px; }
   }
+  /* 伪横屏（转屏锁定用户）：整个舞台由 rotate.js 旋转 90°。
+     内容左上角会落到屏幕右上角（官方悬浮按钮区），所以把内容左上/右上的元素都换位：
+     暂停键并入右侧按钮列，目标提示改到内容左下角；安全区 env 是物理方向的，
+     在旋转后含义错乱，一律改回纯百分比 */
+  html.forced #btn-pause {
+    left: auto; top: auto;
+    right: calc(6% + 66px); bottom: 34%;
+    border-radius: 50%;
+  }
+  html.forced body.touch #objective {
+    top: auto; bottom: calc(14px + 6px);
+    left: 14px;
+  }
+  html.forced #joy-zone { left: 4%; bottom: 5%; }
+  html.forced #btn-interact { right: 5%; bottom: 7%; }
+  html.forced #btn-flash { right: 26%; bottom: 20%; }
+  html.forced #btn-run { right: 6%; bottom: 34%; }
+  html.forced #rotate-hint { display: none !important; }
+
   /* landscape is the intended orientation; in portrait show a gentle hint */
   #rotate-hint {
     position: fixed; top: 0; left: 0; right: 0; z-index: 60;
@@ -341,14 +395,6 @@
   /* touch mode: the E-key badge is meaningless without a keyboard */
   body.touch #prompt .key { display: none; }
 </style>
-<script type="importmap">
-{
-  "imports": {
-    "three": "./vendor/three.module.js",
-    "three/addons/": "./vendor/addons/"
-  }
-}
-</script>
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -359,6 +405,7 @@
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
     <div id="objective"></div>
+    <div id="battery"><div id="battery-fill"></div></div>
     <div id="prompt" class="hidden"><span class="key">E</span><span id="prompt-text"></span></div>
     <div id="subtitle"><div class="cn"></div><div class="ja"></div></div>
     <div id="flash"></div>
@@ -371,7 +418,7 @@
     <div id="btn-run" class="tbtn">奔跑</div>
     <div id="btn-pause" class="tbtn">❚❚</div>
   </div>
-  <div id="rotate-hint" class="hidden">建议横屏游玩 ／ 横画面をおすすめします</div>
+  <div id="rotate-hint" class="hidden">建议横屏游玩</div>
 
   <div id="scare"><canvas id="scare-canvas"></canvas></div>
 
@@ -381,7 +428,7 @@
       <div class="n-title" id="note-title"></div>
       <div class="n-cn" id="note-cn"></div>
       <div class="n-ja" id="note-ja"></div>
-      <div class="n-hint">— 按 E 或点击关闭 / E かクリックで閉じる —</div>
+      <div class="n-hint">— 按 E 或点击关闭 —</div>
     </div>
   </div>
 
@@ -393,72 +440,44 @@
       <b>W A S D</b> 移动 &nbsp;·&nbsp; <b>鼠标</b> 视角 &nbsp;·&nbsp; <b>SHIFT</b> 奔跑<br>
       <b>F</b> 手电筒 &nbsp;·&nbsp; <b>E</b> 调查 / 开门 &nbsp;·&nbsp; <b>ESC</b> 暂停<br>
       <span style="font-size:11px;opacity:.75">触控板：若指针锁定不可用，按住并拖动即可转动视角<br>
-      视角灵敏度可在暂停页调整 ／ 感度はポーズ画面で調整できます<br>
+      视角灵敏度可在暂停页调整<br>
       <span id="touch-help" style="display:none;color:#9fd8d0">手机：左摇杆移动 · 屏幕滑动视角 · 右侧按钮交互／手电／奔跑</span><br>
-      WASD 移動 · マウス 視点 · SHIFT 走る · F 懐中電灯 · E 調べる · ESC ポーズ<br>
-      トラックパッド：ドラッグで視点を回せます</span>
+      WASD 移动 · 鼠标 视点 · SHIFT 奔跑 · F 手电筒 · E 调查 · ESC 暂停<br>
     </div>
-    <div class="start">― 点击开始 ―<br><span style="font-size:12px;letter-spacing:0.2em;opacity:.7">クリックして開始</span></div>
-    <div class="warn">建议佩戴耳机 · 含恐怖演出与血腥表现 ／ イヤホン推奨</div>
+    <div class="start">― 点击开始 ―<br><span style="font-size:12px;letter-spacing:0.2em;opacity:.7">CLICK</span></div>
+    <div class="warn">建议佩戴耳机 · 含恐怖演出与血腥表现</div>
   </div>
 
   <div id="pause" class="screen hidden">
     <h2>暂停</h2>
     <p>WASD 移动 · 鼠标 视角 · SHIFT 奔跑<br>F 手电筒 · E 调查 · ESC 暂停<br>
-    <span style="font-size:11px;opacity:.75">触控板：按住并拖动即可转动视角 ／ トラックパッド：ドラッグで視点を回せます</span></p>
-    <p style="font-size:12px;opacity:.7">WASD 移動 · マウス 視点 · F 懐中電灯 · E 調べる</p>
+    <span style="font-size:11px;opacity:.75">触控板：按住并拖动即可转动视角</span></p>
+    <p style="font-size:12px;opacity:.7">WASD 移动 · 鼠标 视点 · F 手电筒 · E 调查</p>
     <div class="sensbox" id="sensbox">
       <label for="sens">视角灵敏度 ／ 視点感度 <span id="sensval">14</span></label>
       <input type="range" id="sens" min="4" max="40" step="1" value="14">
-      <div class="sens-hint">拖动滑块后点击下方「点击继续」返回游戏 ／ スライダー後「クリックで再開」</div>
+      <div class="sens-hint">拖动滑块后点击下方「点击继续」返回游戏</div>
     </div>
-    <div class="resume">点击继续（クリックで再開）</div>
+    <div class="resume">点击继续</div>
   </div>
 
   <div id="end" class="screen hidden">
     <h1>― 了 ―</h1>
     <div class="end-text" id="end-text"></div>
     <div class="end-stats" id="end-stats"></div>
-    <div class="again" id="end-again">再来一次 / もう一度</div>
+    <div class="again" id="end-again">再来一次</div>
   </div>
 
   <div id="fade"></div>
 
   <div id="error" class="screen hidden">
     <div>
-      レンダラーを初期化できませんでした。<br>
-      WebGL に対応した PC ブラウザで開いてください。<br><br>
+      渲染器初始化失败。<br>
+      请使用支持 WebGL 的 PC 浏览器打开。<br><br>
       Could not initialize the renderer. Please open this page in a WebGL-capable browser.
     </div>
   </div>
 
-  <script>
-  window.addEventListener('error', (e) => {
-    document.title = 'JSERR:' + (e.message || 'unknown') + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno;
-  });
-
-  // ---- sensitivity slider (pause screen) ----
-  (function () {
-    const slider = document.getElementById('sens');
-    const val = document.getElementById('sensval');
-    if (!slider || !val) return;
-    let v = 14;
-    try { const p = parseFloat(localStorage.getItem('echo_sens')); if (p > 0) v = Math.round(p * 1000); } catch (e) {}
-    v = Math.min(40, Math.max(4, v));
-    slider.value = v; val.textContent = v;
-    const apply = () => {
-      val.textContent = slider.value;
-      if (window.__game && window.__game.setSensitivity) window.__game.setSensitivity(slider.value / 1000);
-    };
-    slider.addEventListener('input', apply);
-    // slider drags must not bubble up to #pause's click-to-relock
-    const box = document.getElementById('sensbox');
-    for (const ev of ['mousedown', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']) {
-      slider.addEventListener(ev, (e) => e.stopPropagation());
-      if (box) box.addEventListener(ev, (e) => e.stopPropagation());
-    }
-  })();
-</script>
-<script type="module" src="./js/game.js"></script>
+  <script src="./js/bundle.js"></script>
 </body>
 </html>
