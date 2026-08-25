@@ -124,7 +124,7 @@ const GRADE_FRAG = `
     // (ambient + many corridor fixtures accumulate to ~1.1 far away) or the
     // bloom grows that band into a wide white smear across the corridor.
     vec3 glow = vec3(0.0);
-    float gt = 1.2;
+    float gt = 1.25;
     for (float i = 0.0; i < 16.0; i++) {
       float a = i * 0.3926991; // golden-angle rotation
       float rad = 0.0035 + 0.011 * floor(i / 8.0);
@@ -134,11 +134,11 @@ const GRADE_FRAG = `
     col += glow * (uGlow / 16.0);
 
     // Extra highlight shoulder (safety net against large pure-white sheets).
-    // Below 1.2 the curve is untouched; above it values are rolled off so a
+    // Below 1.25 the curve is untouched; above it values are rolled off so a
     // close flashlight hotspot or a light fixture can never accumulate into an
     // all-white wall after tone mapping.
-    vec3 over = max(vec3(0.0), col - vec3(1.2));
-    // Roll off only the part above 1.2; pixels at or below 1.2 stay untouched.
+    vec3 over = max(vec3(0.0), col - vec3(1.25));
+    // Roll off only the part above 1.25; pixels at or below 1.25 stay untouched.
     col += over * (vec3(1.0) / (vec3(1.0) + over * 0.32) - vec3(1.0));
 
     // scanlines (2px at 360p)
@@ -426,7 +426,7 @@ class Game {
     // (decay 1.5) keeps the hotspot from blowing out walls at close range).
     // NOTE: kept as a direct scene child (not camera-attached) - camera-attached
     // spotlights proved unreliable on some GPU/driver combos and lit nothing.
-    this.flash = new THREE.SpotLight(0xcfe0ff, 5.5, 18, 0.34, 0.85, 1.7);
+    this.flash = new THREE.SpotLight(0xcfe0ff, 8.0, 22, 0.40, 0.85, 1.5);
     this.flash.position.set(0.1, EYE - 0.06, this.playerPos.z);
     // shadows disabled on the flashlight: a moving spotlight shadow map is the
     // classic source of white speckle (shadow acne) on walls, and it costs a
@@ -869,26 +869,32 @@ class Game {
   }
 
   _raycastTarget() {
-    this.raycaster = this.raycaster || new THREE.Raycaster();
-    const meshes = [];
+    // distance + cone based pickup: the interactable must be within its own
+    // max distance (it.dist), inside a 60° forward cone, and not behind a
+    // wall. No longer requires pixel-perfect aim on a 5cm battery.
+    this._pickDir = this._pickDir || new THREE.Vector3();
+    this.camera.getWorldDirection(this._pickDir);
+    const camPos = this.camera.position;
+    let best = null;
+    let bestDist = Infinity;
     for (const it of this.level.interactables) {
       if (it.disabled) continue;
-      meshes.push(it.mesh);
+      const mesh = it.mesh;
+      mesh.updateWorldMatrix(true, false);
+      const wp = mesh.getWorldPosition(this._tmpV || (this._tmpV = new THREE.Vector3()));
+      const dx = wp.x - camPos.x;
+      const dy = wp.y - camPos.y;
+      const dz = wp.z - camPos.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist > it.dist) continue;
+      // cone check: angle between view dir and direction to object < 30°
+      const dot = (dx * this._pickDir.x + dy * this._pickDir.y + dz * this._pickDir.z) / dist;
+      if (dot < Math.cos(Math.PI / 6)) continue; // > 30° off-center
+      // line-of-sight: no interacting through walls
+      if (this._losBlocked(dist)) continue;
+      if (dist < bestDist) { bestDist = dist; best = it; }
     }
-    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-    const hits = this.raycaster.intersectObjects(meshes, true);
-    for (const h of hits) {
-      if (h.distance > 2.6) continue;
-      let obj = h.object;
-      while (obj && !obj.userData.interactable) obj = obj.parent;
-      if (obj?.userData.interactable) {
-        // line-of-sight: no interacting through walls/doors (the ray only
-        // tests interactable meshes, so walls would otherwise never block)
-        if (this._losBlocked(h.distance)) continue;
-        return { object: obj, interactable: obj.userData.interactable };
-      }
-    }
-    return null;
+    return best ? { object: best.mesh, interactable: best } : null;
   }
 
   // is a static collider between the camera and distance `dist` blocking the
@@ -1816,7 +1822,7 @@ class Game {
       // Stronger roll-off: near a wall the beam must fall to ~15% (not 35%),
       // otherwise a 0.3m hotspot still accumulates ~15 radiance -> near-white.
       const close = clamp((nearWall - 0.3) / 1.4, 0.15, 1);
-      flashI = 4.6 * close * (this._flashMul ?? 1);
+      flashI = 6.5 * close * (this._flashMul ?? 1);
       const nearMonster = this.monster.state === 'stalk' || this.monster.state === 'chase';
       const md = Math.hypot(this.monster.pos.x - this.playerPos.x, this.monster.pos.z - this.playerPos.z);
       if (nearMonster && md < 5) {
