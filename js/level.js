@@ -41,6 +41,97 @@ export class Level {
     this._buildDecals();
     this._buildLights();
     this._buildNodes();
+    this._initPerf();
+  }
+
+  // ---------------------------------------------------------------- perf
+  /* 性能基建（视觉不变）。
+     前向渲染里每个着色像素都要遍历全部点光源：本关有 40+ 盏，是卡顿主因。
+     灯光预算只保留对画面真正有贡献的最近/视野内的灯；可见灯数量恒定，
+     避免three.js因灯光数变化反复编译着色器变体。
+     关卡几何构建后静止不动，冻结其矩阵省掉每帧 updateMatrixWorld 遍历。 */
+  _initPerf() {
+    this._cullable = [];
+    const dead = new Set();
+    for (const f of this.fluorescents) if (f.mode === 'dead' || f.base === 0) dead.add(f.light);
+    this.scene.traverse((o) => {
+      if (!o.isPointLight) return;
+      if (dead.has(o)) { o.visible = false; return; } // 常灭灯永不参与着色
+      this._cullable.push(o);
+    });
+    this.lightBudget = Math.min(14, this._cullable.length);
+    this._budgetT = -1; // <0 → 首次 update 立即分配
+    this._viewDir = new THREE.Vector3(0, 0, 1);
+    this._lastCam = { x: this.playerStart.x, y: this.playerStart.y, z: this.playerStart.z };
+    this._freezeStaticMatrices();
+    this._applyLightBudget(this._lastCam.x, this._lastCam.y, this._lastCam.z);
+  }
+
+  _freezeStaticMatrices() {
+    const dynamic = new Set();
+    const keepTree = (o) => { if (o) o.traverse((c) => dynamic.add(c)); };
+    for (const d of this.doors) keepTree(d.pivot);
+    const P = this.props;
+    keepTree(P.cabinet?.pivot);
+    keepTree(P.doll?.mesh);
+    keepTree(P.mobile);
+    keepTree(P.furin);
+    for (const r of P.ropes || []) dynamic.add(r);
+    for (const o of this.ofudas) dynamic.add(o);
+    for (const b of P.batteries || []) dynamic.add(b.halo);
+    this.scene.traverse((o) => {
+      if (dynamic.has(o) || o.isLight || o.isCamera) return;
+      o.matrixAutoUpdate = false;
+      o.updateMatrix();
+    });
+  }
+
+  /* 运行期临时灯（演出用逆光等）纳入预算管理，注册/注销都立即重新分配，
+     保证任意渲染帧的可见灯数量恒定（= 不触发新的着色器变体编译）。 */
+  registerLight(light) {
+    if (!light || !light.isPointLight || this._cullable.includes(light)) return;
+    this._cullable.push(light);
+    light.visible = false;
+    this._applyLightBudgetNow();
+  }
+
+  unregisterLight(light) {
+    const i = this._cullable.indexOf(light);
+    if (i >= 0) this._cullable.splice(i, 1);
+    light.visible = false;
+    this._applyLightBudgetNow();
+  }
+
+  _applyLightBudgetNow() {
+    const c = this._lastCam;
+    this._applyLightBudget(c.x, c.y, c.z);
+  }
+
+  _applyLightBudget(px, py, pz) {
+    this._lastCam.x = px; this._lastCam.y = py; this._lastCam.z = pz;
+    const K = this.lightBudget;
+    const list = this._cullable;
+    const n = list.length;
+    if (n <= K) { for (let i = 0; i < n; i++) list[i].visible = true; return; }
+    const fdx = this._viewDir.x, fdz = this._viewDir.z;
+    const fl = Math.hypot(fdx, fdz) || 1;
+    const scored = this._scored || (this._scored = new Array(n));
+    for (let i = 0; i < n; i++) {
+      const l = list[i];
+      const dx = l.position.x - px, dy = l.position.y - py, dz = l.position.z - pz;
+      let s = dx * dx + dz * dz + dy * dy * 0.6; // 楼层差压权：隔层灯贡献≈0
+      const dl = Math.sqrt(dx * dx + dz * dz) || 1;
+      const dot = (dx * fdx + dz * fdz) / (dl * fl);
+      if (dot > 0.3) s *= 0.4;                   // 视野前方：光池看得见，优先保留
+      else if (dot < -0.4 && s > 49) s *= 3;     // 身后 7m 外：最先让位
+      if (l.intensity <= 0.001) s += 1e7;        // 熄灭的灯仅作占位，维持数量恒定
+      if (l.visible) s *= 0.75;                  // 滞回：上一轮亮着的优先续留防抖动
+      if (scored[i]) { scored[i].l = l; scored[i].s = s; } else scored[i] = { l, s };
+    }
+    scored.length = n;
+    scored.sort((a, b) => a.s - b.s);
+    for (let i = 0; i < K; i++) scored[i].l.visible = true;
+    for (let i = K; i < n; i++) scored[i].l.visible = false;
   }
 
   // ---------------------------------------------------------------- materials
@@ -1896,8 +1987,15 @@ export class Level {
     return best;
   }
 
-  update(dt, time, playerPos = null) {
+  update(dt, time, playerPos = null, viewDir = null) {
     this.updateDoors(dt);
+    // 灯光预算节流重算（0.12s）：排序 51 盏灯的成本可忽略，切换只改 uniforms
+    this._budgetT -= dt;
+    if (this._budgetT < 0 && playerPos) {
+      this._budgetT = 0.12;
+      if (viewDir) this._viewDir.copy(viewDir);
+      this._applyLightBudget(playerPos.x, playerPos.y, playerPos.z);
+    }
     // 人偶的头会极缓慢地转向玩家（凝视恐怖，报告 1.4）——
     // 只在近处生效、转速慢到「感觉不对但说不出为什么」；远禹时保持原样
     const doll = this.props.doll;

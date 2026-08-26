@@ -252,8 +252,8 @@ class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(RENDER_W, RENDER_H, false);
     this.renderer.setPixelRatio(1);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // 场景内没有任何投射阴影的光源（手电也关了阴影），阴影管线纯开销，直接关掉
+    this.renderer.shadowMap.enabled = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.38;
     this.scene = new THREE.Scene();
@@ -880,7 +880,7 @@ class Game {
     for (const it of this.level.interactables) {
       if (it.disabled) continue;
       const mesh = it.mesh;
-      mesh.updateWorldMatrix(true, false);
+      // getWorldPosition 内部已含 updateWorldMatrix(true, false)，无需再手动调一次
       const wp = mesh.getWorldPosition(this._tmpV || (this._tmpV = new THREE.Vector3()));
       const dx = wp.x - camPos.x;
       const dy = wp.y - camPos.y;
@@ -905,7 +905,7 @@ class Game {
     this._ray.origin.copy(this.camera.position);
     this.camera.getWorldDirection(this._vDir);
     this._ray.direction.copy(this._vDir);
-    const hit = new THREE.Vector3();
+    const hit = this._hitV || (this._hitV = new THREE.Vector3());
     for (const b of this._losBoxes) {
       const t = this._ray.intersectBox(b, hit);
       if (t !== null && t < dist - 0.05) return true;
@@ -1192,7 +1192,11 @@ class Game {
         const rim = new THREE.PointLight(0xcfe0ea, 3.4, 16, 1.6);
         rim.position.set(0, 2.5, 45);
         this.scene.add(rim);
-        setTimeout(() => rim.removeFromParent(), 3700);
+        this.level.registerLight(rim); // 纳入灯光预算，保持可见灯数恒定
+        setTimeout(() => {
+          rim.removeFromParent();
+          this.level.unregisterLight(rim);
+        }, 3700);
         // 消失前最后一记重踏——预告「它是能追你的」
         setTimeout(() => { if (!this.finale) this.audio.thud(); }, 3300);
       }
@@ -1512,7 +1516,8 @@ class Game {
       this._updateBattery(dt);
     }
 
-    this.level.update(dt, this.time, this.camera.position);
+    this.level.update(dt, this.time, this.camera.position,
+      this.camera.getWorldDirection(this._viewDir || (this._viewDir = new THREE.Vector3())));
     const tv = this.level.props.tv;
     // a switched-off TV must be a dark screen, not an always-on static glow
     tv.screen.visible = tv.on;
@@ -1832,13 +1837,20 @@ class Game {
     this.flash.intensity = flashI;
     this.coneMat.uniforms.uFade.value = this.flashOn ? 1 : 0;
 
-    // triggers
-    this.level.checkTriggers(new THREE.Vector3(this.playerPos.x, this.playerPos.y + 0.2, this.playerPos.z));
+    // triggers（复用向量，避免每帧分配）
+    const tv = this._trigV || (this._trigV = new THREE.Vector3());
+    tv.set(this.playerPos.x, this.playerPos.y + 0.2, this.playerPos.z);
+    this.level.checkTriggers(tv);
   }
 
   _dynColliders() {
-    const arr = this.level.colliders.slice(0);
-    for (const d of this.level.doors) if (d.collider) arr.push(d.collider);
+    // 复用数组：每帧两次调用，避免 slice 产生 GC 压力
+    const arr = this._dynArr || (this._dynArr = []);
+    arr.length = 0;
+    const cs = this.level.colliders;
+    for (let i = 0; i < cs.length; i++) arr.push(cs[i]);
+    const ds = this.level.doors;
+    for (let i = 0; i < ds.length; i++) if (ds[i].collider) arr.push(ds[i].collider);
     return arr;
   }
 
@@ -1871,16 +1883,20 @@ class Game {
 
   _updateMonster(dt) {
     const p = this.playerPos;
-    const dir = new THREE.Vector3();
+    // 复用临时向量：这段每帧执行，避免三个 Vector3 分配的 GC 压力
+    const dir = this._mDir || (this._mDir = new THREE.Vector3());
     this.camera.getWorldDirection(dir);
     dir.y = 0;
     dir.normalize();
-    const toM = new THREE.Vector3(this.monster.pos.x - p.x, 0, this.monster.pos.z - p.z);
+    const toM = this._mTo || (this._mTo = new THREE.Vector3());
+    toM.set(this.monster.pos.x - p.x, 0, this.monster.pos.z - p.z);
     const md = toM.length();
     const flashHit = this.flashOn && md > 0.01 && md < 22 && dir.dot(toM.normalize()) > 0.94;
 
+    const pl = this._mPl || (this._mPl = new THREE.Vector3());
+    pl.set(p.x, p.y, p.z);
     this.monster.update(dt, {
-      player: new THREE.Vector3(p.x, p.y, p.z),
+      player: pl,
       lookDir: dir,
       flashHit,
       time: this.time,
