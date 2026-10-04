@@ -1,4 +1,4 @@
-# dependencies (the game is self-contained: package.json imports map to vendor/)
+# dependencies (the runtime uses local vendor files)
 node_modules/
 
 # macOS
@@ -6,3 +6,6 @@ node_modules/
 
 # logs / scratch
 *.log
+# Local browser QA artifacts
+.playwright-cli/
+output/

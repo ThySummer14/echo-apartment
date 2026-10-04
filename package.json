@@ -1,14 +1,14 @@
 {
   "name": "echo-apartment",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "残響アパート — ECHO APARTMENT: PS1-style Japanese psychological horror (Three.js, no external assets)",
-  "imports": {
-    "three": "./vendor/three.module.js"
-  },
+  "description": "回声公寓：五章心理恐怖调查游戏，西翼暗房 / 空间声场 / 双结局 / 本地程序化素材",
   "scripts": {
-    "start": "python3 -m http.server 8000",
-    "test": "node smoke.mjs"
+    "start": "python3 -m http.server 8000 --bind 127.0.0.1",
+    "build": "node build.mjs",
+    "build:desktop": "node build.mjs desktop",
+    "test": "node campaign.test.mjs && node smoke.mjs",
+    "audit": "node debug-audit.mjs"
   }
 }

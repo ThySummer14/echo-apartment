@@ -1,50 +1,25 @@
 // game.js — main loop: renderer + post FX, player controller, interactions,
 // event director, monster AI glue, scares, UI flow.
-import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import * as THREE from '../vendor/three.module.js';
+import { PointerLockControls } from '../vendor/addons/controls/PointerLockControls.js';
+import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from '../vendor/addons/postprocessing/ShaderPass.js';
 import { AudioEngine } from './audio.js';
 import { Level } from './level.js';
 import { Monster, GhostGirl } from './monster.js';
 import { updateTVStatic } from './textures.js';
+import { Campaign, DOCUMENTS, CHAPTERS, SAVE_KEY, ENDINGS } from './campaign.js';
+import { syncCampaignWorld, currentArea } from './campaign-world.js';
+import { InvestigationUI } from './investigation.js';
+import { AtmosphereDirector } from './atmosphere.js';
+import { interactionBlocked } from './interaction.js';
 import { setSnapResolution, aabbFromSphere, moveWithCollisions, clamp, lerp, rand, chance, pick } from './util.js';
 
-const RENDER_W = 640, RENDER_H = 360;
+const RENDER_W = 1280, RENDER_H = 720;
 const EYE = 1.55, PLAYER_H = 1.75, PLAYER_R = 0.3;
 
 const $ = (id) => document.getElementById(id);
-
-// ---------------------------------------------------------------- notes / text
-const NOTES = {
-  1: {
-    title: '管理人的手记 — 7月14日',
-    titleJa: '管理人の手記 — 7月14日',
-    item: '手记 1/3',
-    cn: '深夜又传来了声响。\n自从3号室那家人消失之后，一直如此。\n\n总觉得，只有那个孩子\n还留在这里。\n\n玄关的门，再也打不开了。',
-    ja: 'また夜中に物音がする。\n3号室の家族が消えてから、ずっとだ。\n\nあの子だけが、まだここにいる気がする。\n\n玄関のドアは、もう開かない。',
-  },
-  2: {
-    title: '旧报纸的剪报',
-    titleJa: '古新聞の切り抜き',
-    item: '手记 2/3',
-    cn: '○○公寓一家失踪事件\n3号室的一家四口，一夜之间消失了。\n只有长子（7岁）至今下落不明。\n\n邻居的证言：\n「夜里，听见有人在走廊走动的声音。」',
-    ja: '◯◯アパート一家失踪事件\n3号室の家族4人が、忽然と姿を消した。\n長男（7）の行方のみ、いまだ不明。\n\n近隣住民の証言：\n「夜、誰かが廊下を歩く音を聞いた」',
-  },
-  3: {
-    title: '孩子的涂鸦',
-    titleJa: '子供の落書き',
-    item: '手记 3/3',
-    cn: '妈妈，你在哪里？\n\n有一个高高的黑色人影\n一直站在我们身后。\n\n一到晚上，它就会看着这边。',
-    ja: 'おかあさん どこ？\n\nせのたかい くろいひとが\nいつも うしろに いる。\n\nよるになると こっちを みてる。',
-  },
-};
-
-const END_TEXT =
-  '外面还很黑。\n但身后的气息，已经消失了。\n\n你没有回头，走进了夜色。\n\n——回声公寓 · 终';
-const END_TEXT_JA =
-  '外はまだ暗い。\nけれど、背後の気配はもうない。\n\nあなたは振り返らず、夜の中へ歩き出した。\n\n――残響アパート・了';
 
 // ---------------------------------------------------------------- grade shader
 const GRADE_VERT = `
@@ -169,7 +144,7 @@ const GRADE_FRAG = `
          * 0.045 * (0.3 + 0.7 * smoothstep(0.05, 0.25, dlum));
 
     // ordered dithering (banding killer) — 32 perceptually even display levels
-    col = floor(col * 31.0 + bayer4(gl_FragCoord.xy)) / 31.0;
+    col = floor(col * 63.0 + bayer4(gl_FragCoord.xy)) / 63.0;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -193,6 +168,11 @@ class Game {
     this.audio = new AudioEngine();
     this.state = 'title'; // title | playing | scared | ending
     this.notes = new Set();
+    this.campaign = new Campaign();
+    this.storyEvents = [];
+    this.hiding = false;
+    this.spareBatteries = 0;
+    this.saveNotice = 0;
     this.fear = 0;
     this.time = 0;
     this.scareCount = 0;
@@ -234,6 +214,8 @@ class Game {
       this._initDust();
       this._initEvents();
       this._initTouch();
+      this.investigation = new InvestigationUI(this);
+      this.atmosphere = new AtmosphereDirector(this);
       this.initOK = true;
     } catch (err) {
       console.error(err);
@@ -249,7 +231,7 @@ class Game {
 // ------------------------------------------------------------ init: renderer
   _initRenderer() {
     this.canvas = $('game');
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(RENDER_W, RENDER_H, false);
     this.renderer.setPixelRatio(1);
     // 场景内没有任何投射阴影的光源（手电也关了阴影），阴影管线纯开销，直接关掉
@@ -258,8 +240,8 @@ class Game {
     this.renderer.toneMappingExposure = 1.38;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x04060a);
-    this.scene.fog = new THREE.FogExp2(0x05090d, 0.062);
-    this.camera = new THREE.PerspectiveCamera(75, RENDER_W / RENDER_H, 0.05, 70);
+    this.scene.fog = new THREE.FogExp2(0x0a1211, 0.043);
+    this.camera = new THREE.PerspectiveCamera(75, RENDER_W / RENDER_H, 0.05, 250);
     this.camera.rotation.order = 'YXZ';
     // CRITICAL: the camera must be part of the scene graph, otherwise the
     // renderer's scene traversal never collects camera-attached lights/meshes
@@ -278,8 +260,8 @@ class Game {
   }
 
   _applyResolution() {
-    const w = Math.round(RENDER_W * this.resScale);
-    const h = Math.round(RENDER_H * this.resScale);
+    const w = Math.round((this.renderW || RENDER_W) * this.resScale);
+    const h = Math.round((this.renderH || RENDER_H) * this.resScale);
     this.renderer.setSize(w, h, false);
     if (this.composer) this.composer.setSize(w, h);
     setSnapResolution(w, h);
@@ -307,22 +289,48 @@ class Game {
   }
 
   _fitCanvas() {
-    /* 伪横屏时逻辑视口宽高互换（舞台已旋转 90°） */
-    var forced = typeof window.__forcedLandscape === 'function' && window.__forcedLandscape();
+    const forced = typeof window.__forcedLandscape === 'function' && window.__forcedLandscape();
     const w = forced ? window.innerHeight : window.innerWidth;
     const h = forced ? window.innerWidth : window.innerHeight;
-    const target = RENDER_W / RENDER_H;
-    /* 手机适配：任何方向都完整显示整个 16:9 画面（contain 缩放），
-       竖屏时上下留黑边、不再横向裁切掉两侧的门和线索 */
-    const scale = Math.min(w / RENDER_W, h / RENDER_H);
-    this.canvas.style.width = `${Math.round(RENDER_W * scale)}px`;
-    this.canvas.style.height = `${Math.round(RENDER_H * scale)}px`;
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderW = RENDER_W;
+    this.renderH = Math.round(RENDER_W * h / w);
+    this.renderer.setSize(this.renderW * (this.resScale || 1), this.renderH * (this.resScale || 1), false);
+    if (this.composer) this._applyResolution();
   }
 
   _initScene() {
     this.hemi = new THREE.HemisphereLight(0x2a3844, 0x0a0705, 1.26);
     this.hemiBase = 1.26;
     this.scene.add(this.hemi);
+    const moonlight = new THREE.DirectionalLight(0x7293a3, 0.24);
+    moonlight.position.set(-14, 30, 70);
+    this.scene.add(moonlight);
+    // 屋顶有远处楼群、云层与月光，走出楼梯间时能读出建筑轮廓。
+    this.skyMaterial = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec3 vSky; void main() {
+        vSky = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+      fragmentShader: `uniform float uTime; varying vec3 vSky;
+        void main() {
+          vec3 dir = normalize(vSky);
+          float clouds = sin(dir.x * 19.0 + uTime * 0.008 + sin(dir.z * 11.0))
+            * sin(dir.z * 16.0 - uTime * 0.005 + dir.x * 4.0);
+          vec3 color = mix(vec3(0.036, 0.061, 0.066), vec3(0.007, 0.013, 0.023), clamp(dir.y, 0.0, 1.0));
+          color *= 0.83 + clouds * 0.16;
+          float moon = length(dir - normalize(vec3(-0.3, 0.58, 0.82)));
+          color += vec3(0.22, 0.3, 0.32) * (1.0 - smoothstep(0.0, 0.09, moon));
+          color += vec3(0.4, 0.48, 0.47) * (1.0 - smoothstep(0.012, 0.018, moon));
+          gl_FragColor = vec4(color, 1.0);
+        }`,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 24, 16), this.skyMaterial);
+    sky.position.set(0, 0, 44);
+    this.scene.add(sky);
     // lightning director state: strikes flicker the windows + sky glow, with
     // distance-delayed thunder
     this.lightning = { next: rand(25, 60), t: 0, dur: 0, dist: 0.5 };
@@ -330,7 +338,7 @@ class Game {
 
   _initPost() {
     this.composer = new EffectComposer(this.renderer);
-    this.composer.setSize(RENDER_W, RENDER_H);
+    this.composer.setSize(this.renderW, this.renderH);
     this.composer.setPixelRatio(1);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.grade = new ShaderPass({
@@ -363,6 +371,17 @@ class Game {
       },
       onExitOpen: () => { this._sub('夜风涌了进来。', '外の空気が、流れ込む。'); },
       onNote: (id) => this._readNote(id),
+      onDocument: (id) => this._readNote(id),
+      onPuzzle: (id) => this.investigation.openPuzzle(id),
+      onHide: (mesh) => this._toggleHide(mesh),
+      onItem: (id, mesh, it) => {
+        if (this.campaign.collectItem(id)) {
+          mesh.visible = false; it.disabled = true;
+          this.audio.paperRustle(); this._refreshCampaign();
+          const messages = { fuse: '找到备用熔断器。维修门在走廊右侧。', tape: '七月十四日的录音带。去 203 放映室听听。', valveHandle: '取回排水阀手轮。可以回地下装回它了。' };
+          this._sub(messages[id] || '物品已放入随身物品栏。', '', 4);
+        }
+      },
       onPhone: () => this._answerPhone(),
       onTV: () => this._toggleTV(),
       onBell: () => this._ringBell(),
@@ -408,6 +427,8 @@ class Game {
   // ------------------------------------------------------------ init: player
   _initPlayer() {
     this.controls = new PointerLockControls(this.camera, document.body);
+    // 浏览器拒绝指针锁定时进入已有的拖动视角模式。
+    document.removeEventListener('pointerlockerror', this.controls._onPointerlockError);
     // sensitivity in rad/px, persisted across sessions (pause-screen slider).
     // NOTE: three's pointerSpeed is a MULTIPLIER on its built-in 0.002 rad/px
     // base — setting it to a rad/px value directly makes turning ~500x too slow.
@@ -487,6 +508,23 @@ class Game {
     this.cone = new THREE.Mesh(coneGeo, this.coneMat);
     this.cone.position.set(0.04, -0.09, 0.01);
     this.camera.add(this.cone);
+    // 手持道具由相机局部坐标驱动，保持与照射方向一致。
+    const torch = new THREE.Group();
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.24, 12),
+      new THREE.MeshStandardMaterial({ color: 0x27302a, roughness: 0.7 }));
+    handle.rotation.x = Math.PI / 2;
+    torch.add(handle);
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.038, 0.085, 12),
+      new THREE.MeshStandardMaterial({ color: 0x6b7467, roughness: 0.65, metalness: 0.12 }));
+    head.rotation.x = Math.PI / 2; head.position.z = -0.15; torch.add(head);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.046, 12),
+      new THREE.MeshBasicMaterial({ color: 0x899987 }));
+    lens.position.z = -0.195; lens.rotation.y = Math.PI; torch.add(lens);
+    const button = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.012, 0.035),
+      new THREE.MeshStandardMaterial({ color: 0x939b89, roughness: 0.9 }));
+    button.position.set(0, 0.036, -0.02); torch.add(button);
+    torch.position.set(0.31, -0.27, -0.48); torch.rotation.x = -0.15;
+    this.camera.add(torch); this.torchModel = torch;
 
     // keys
     window.addEventListener('keydown', (e) => { this.keys[e.code] = true; this._onKey(e); });
@@ -536,10 +574,8 @@ class Game {
     });
 
     // title / pause / restart clicks
-    $('title').addEventListener('click', () => this._start());
-    $('pause').addEventListener('click', () => this._tryLock());
     $('end-again').addEventListener('click', () => location.reload());
-    $('note').addEventListener('click', () => this._closeNote());
+    $('note').addEventListener('click', (event) => { if (event.target === $('note') || event.target === $('note-close')) this._closeNote(); });
   }
 
   _initDust() {
@@ -678,7 +714,7 @@ class Game {
 
     // ---- look: any touch that starts on the canvas (the buttons and the
     // joystick sit above it and never reach here)
-    const canLook = () => this.state === 'playing' && !this.noteOpen;
+    const canLook = () => this.state === 'playing' && !this.noteOpen && $('pause').classList.contains('hidden');
     this.canvas.addEventListener('touchstart', (e) => {
       if (this._lookId !== null) return;
       const t = e.changedTouches[0];
@@ -737,7 +773,7 @@ class Game {
       }, { passive: false });
     }
     tap($('btn-pause'), () => {
-      if (this.state === 'playing' && !this.noteOpen) $('pause').classList.remove('hidden');
+      if (this.state === 'playing' && !this.noteOpen) this.investigation.openSettings();
     });
 
     // portrait hint
@@ -788,27 +824,126 @@ class Game {
   }
 
   // ------------------------------------------------------------ flow
-  _start() {
-    if (this.state !== 'title') return;
+  _start(continueSaved = false) {
+    if (this.state !== 'title' || !this.initOK) return;
+    this.campaign = new Campaign(continueSaved ? this.investigation.saved : null);
+    this.notes = new Set(this.campaign.documents);
+    syncCampaignWorld(this.level, this.campaign);
     this.audio.ensure();
+    this.audio.setPaused(false);
     this.state = 'playing';
     this.startTime = performance.now();
     $('title').classList.add('hidden');
     $('hud').classList.remove('hidden');
     if (this._touchUI) this._touchUI.classList.remove('hidden');
+    this._wakeAtCheckpoint();
     this._tryLock();
-    this._sub('……这里，是哪里？', '……ここは、どこだ', 3.2);
-    setTimeout(() => {
-      this._sub('这栋公寓的一家人失踪了。去找线索。', '家族が消えたアパート。手がかりを探せ。', 4.4);
-      this._setObjective('寻找线索 0 / 3', '手がかりを探せ 0 / 3');
-    }, 3800);
-    setTimeout(() => {
-      this._sub('走廊尽头，有什么东西。', '廊下の先に、何かがいる。', 3.4);
-    }, 9000);
-    setTimeout(() => {
-      this._sub('按 F 开关手电筒', 'F で懐中電灯', 3.2);
-    }, 12500);
+    this._refreshCampaign(false);
+    this._showChapter();
+    if (continueSaved) this._sub('雨还在下。你记得自己是来做什么的。', '', 4);
+    else {
+      this._sub('拆除前一夜。那封信把你带回了这里。', '', 4.5);
+      this.storyEvents.push({ delay: 5, action: () => this._sub('先看看大厅左侧值班台上的信。按 E 调查。', '', 5) });
+    }
+    if (this.campaign.flags.released) {
+      this.finale = true;
+      this.storyEvents.push({ delay: 6, action: () => this._spawnHunt() });
+    }
   }
+
+  _refreshCampaign(save = true) {
+    syncCampaignWorld(this.level, this.campaign);
+    this._setObjective(this.campaign.objective);
+    $('chapter-label').textContent = CHAPTERS[this.campaign.chapter].title;
+    $('evidence-count').textContent = this.campaign.documents.size + ' 份记录';
+    if (save && !this.campaign.flags.ended) {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.campaign.snapshot()));
+        $('save-status').textContent = '调查进度已保存'; this.saveNotice = 3;
+      } catch { $('save-status').textContent = '浏览器无法保存进度'; this.saveNotice = 5; }
+    }
+  }
+
+  _showChapter() {
+    const chapter = CHAPTERS[this.campaign.chapter];
+    $('chapter-title').textContent = chapter.title;
+    $('chapter-subtitle').textContent = chapter.subtitle;
+    $('chapter-card').classList.remove('hidden');
+    this.chapterTimer = 4;
+  }
+
+  _campaignAdvanced(action) {
+    this._refreshCampaign();
+    if (['power', 'cabinet', 'music', 'develop'].includes(action)) this._showChapter();
+    if (action === 'power') {
+      this.battery = Math.max(this.battery, 80);
+      this.audio.buzz(); this.shake = 0.12;
+      this.storyEvents.push({ delay: 4, action: () => {
+        this.audio.knock(3); this._sub('楼上的磁锁松开了。接着，是三下敲门声。', '', 4);
+      } });
+    } else if (action === 'tape') {
+      this.audio.whisper(-0.6, 2.5); this.audio.musicBox();
+      this._setFear(0.5);
+    } else if (action === 'music') {
+      this.audio.lullaby();
+      this._setFear(0.6);
+      this.storyEvents.push({ delay: 2, action: () => {
+        this.ghost.appearAt(3.2, 0, 10.8, Math.PI);
+        this._sub('「你终于记起来了。」', '', 4);
+      } });
+    } else if (action === 'develop') {
+      this.audio.cameraShutter(); this.audio.lullaby(); this._setFear(.25);
+      this.storyEvents.push({ delay: 4, action: () => {
+        this._sub('「苍太。」你念出照片背面的名字。地下的铁链松了。', '', 5); this.audio.hammer(-.3);
+      } });
+    } else if (action === 'valves') this._startFinale();
+  }
+
+  _wakeAtCheckpoint() {
+    const p = this.campaign.checkpoint;
+    this.playerPos.set(p.x, p.y, p.z);
+    this.char = aabbFromSphere(p.x, p.y, p.z, PLAYER_R, PLAYER_H);
+    this.camera.position.set(p.x, p.y + EYE, p.z);
+    this.camera.rotation.set(0, Math.PI, 0);
+    this.eyeY = p.y; this.vy = 0; this.grounded = true;
+    this.hiding = false; this.hideTimer = 0;
+    $('hide-state').classList.add('hidden');
+    this.monster.despawn(); this.ghost.hide();
+    this.audio.heartbeat(false); this._hbOn = false;
+    this.battery = Math.max(45, this.battery); this.flashOn = true;
+    this._setFear(0.15); this.shake = 0;
+    this.storyEvents = this.storyEvents.filter((event) => !event.hunt);
+    if (this.finale) this.storyEvents.push({ delay: 7, hunt: true, action: () => this._spawnHunt() });
+  }
+
+  _spawnHunt() {
+    if (this.state !== 'playing') return;
+    const nodes = this.level.monsterNodes.filter((node) =>
+      Math.abs(node.y - this.playerPos.y) < 0.5 &&
+      Math.hypot(node.x - this.playerPos.x, node.z - this.playerPos.z) > 8 &&
+      Math.hypot(node.x - this.playerPos.x, node.z - this.playerPos.z) < 20);
+    const node = nodes.at(-1);
+    if (!node) return;
+    this.monster.spawn(new THREE.Vector3(node.x, node.y, node.z), 'chase');
+    this.onChaseStart();
+  }
+
+  _toggleHide(mesh) {
+    if (this.hiding) {
+      this.hiding = false; this.flashOn = this.battery > 0;
+      $('hide-state').classList.add('hidden'); this._sub('你推开衣柜的门。', '', 2); return;
+    }
+    const distance = this.monster.pos.distanceTo(this.playerPos);
+    if (['chase', 'stalk'].includes(this.monster.state) && distance < 5 &&
+      !interactionBlocked(this.camera.position, this.monster.pos.clone().add(new THREE.Vector3(0, 1.3, 0)), this.level.colliders, this.level.doors)) {
+      this._sub('它看见了你。先关上门，或者拉开距离。', '', 3); return;
+    }
+    this.hiding = true; this.hideTimer = 0; this.hideMesh = mesh;
+    this.flashOn = false; this.keys = {}; this.audio.doorClose();
+    $('hide-state').classList.remove('hidden');
+    this._sub('屏住呼吸。按 E 离开衣柜。', '', 4);
+  }
+
 
   setSensitivity(v) {
     this.sens = clamp(v, 0.004, 0.04);
@@ -826,7 +961,7 @@ class Game {
       return;
     }
     try {
-      const r = this.controls.lock();
+      const r = document.body.requestPointerLock?.();
       // newer Chrome returns a promise that rejects without a user gesture
       if (r && typeof r.catch === 'function') r.catch(() => this._lockHint());
     } catch (e) { this._lockHint(); }
@@ -839,26 +974,55 @@ class Game {
   }
 
   _onLock() {
-    if (this.state === 'playing') $('pause').classList.add('hidden');
+    if (this.noteOpen || !$('pause').classList.contains('hidden')) {
+      this._skipUnlockPause = true;
+      this.controls.unlock();
+      return;
+    }
+    if (this.state === 'playing') {
+      $('pause').classList.add('hidden');
+      this.audio.setPaused(false);
+    }
   }
 
   _onUnlock() {
+    if (this._skipUnlockPause) { this._skipUnlockPause = false; return; }
+    if (!this.controls.isLocked) return;
     if (this.state === 'playing' && !this.noteOpen) {
-      $('pause').classList.remove('hidden');
+      this.investigation?.openSettings();
     }
   }
 
   _onKey(e) {
-    if (e.code === 'KeyE') {
+    if (e.repeat) return;
+    if (e.code === 'Escape') {
       if (this.noteOpen) { this._closeNote(); return; }
       if (this.state !== 'playing') return;
+      if ($('pause').classList.contains('hidden')) this.investigation.openSettings();
+      else this.investigation.closeSettings();
+      return;
+    }
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) &&
+      document.activeElement.getClientRects().length) return;
+    if (e.code === 'Tab' && this.noteOpen) return;
+    if ((e.code === 'KeyJ' || e.code === 'Tab' || e.code === 'KeyM') && this.state === 'playing') {
+      e.preventDefault();
+      if (this.investigation.panel) this.investigation.close();
+      else if (!this.noteOpen && $('pause').classList.contains('hidden'))
+        this.investigation.openJournal(e.code === 'KeyM' ? 'map' : 'evidence');
+      return;
+    }
+    if (e.code === 'KeyE') {
+      if (this.noteOpen) { this._closeNote(); return; }
+      if (this.state !== 'playing' || !$('pause').classList.contains('hidden')) return;
+      if (this.hiding) { this._toggleHide(); return; }
       this._interact();
     }
-    if (e.code === 'KeyF' && this.state === 'playing') {
+    if (e.code === 'KeyF' && this.state === 'playing' && !this.noteOpen && !this.hiding)
       this._toggleFlash();
-    }
-    if (e.code === 'KeyR' && this.state === 'playing') location.reload();
+    if (e.code === 'KeyR' && this.state === 'playing' && !this.noteOpen) this._wakeAtCheckpoint();
   }
+
 
   // ------------------------------------------------------------ interaction
   _interact() {
@@ -876,87 +1040,68 @@ class Game {
     this.camera.getWorldDirection(this._pickDir);
     const camPos = this.camera.position;
     let best = null;
-    let bestDist = Infinity;
+    let bestScore = Infinity;
     for (const it of this.level.interactables) {
       if (it.disabled) continue;
       const mesh = it.mesh;
+      if (!mesh.visible) continue;
       // getWorldPosition 内部已含 updateWorldMatrix(true, false)，无需再手动调一次
       const wp = mesh.getWorldPosition(this._tmpV || (this._tmpV = new THREE.Vector3()));
       const dx = wp.x - camPos.x;
       const dy = wp.y - camPos.y;
       const dz = wp.z - camPos.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist > it.dist) continue;
+      if (dist > it.dist || dist < 0.001) continue;
       // cone check: angle between view dir and direction to object < 30°
       const dot = (dx * this._pickDir.x + dy * this._pickDir.y + dz * this._pickDir.z) / dist;
       if (dot < Math.cos(Math.PI / 6)) continue; // > 30° off-center
       // line-of-sight: no interacting through walls
-      if (this._losBlocked(dist)) continue;
-      if (dist < bestDist) { bestDist = dist; best = it; }
+      if (interactionBlocked(camPos, wp, this.level.colliders, this.level.doors, it.door?.collider ?? mesh.userData.collider)) continue;
+      // 优先玩家正在看的物件，避免旁边稍近的铃铛抢走纸张的调查。
+      const score = Math.acos(clamp(dot, -1, 1)) * 4 + dist * 0.4;
+      if (score < bestScore) { bestScore = score; best = it; }
     }
     return best ? { object: best.mesh, interactable: best } : null;
   }
 
-  // is a static collider between the camera and distance `dist` blocking the
-  // ray? (precomputed Box3s: level.colliders never changes)
-  _losBlocked(dist) {
-    this._ray = this._ray || new THREE.Ray();
-    this._vDir = this._vDir || new THREE.Vector3();
-    this._ray.origin.copy(this.camera.position);
-    this.camera.getWorldDirection(this._vDir);
-    this._ray.direction.copy(this._vDir);
-    const hit = this._hitV || (this._hitV = new THREE.Vector3());
-    for (const b of this._losBoxes) {
-      const t = this._ray.intersectBox(b, hit);
-      if (t !== null && t < dist - 0.05) return true;
-    }
-    return false;
-  }
-
-  // ------------------------------------------------------------ notes
+  // ------------------------------------------------------------ investigation
   _readNote(id) {
-    if (this.noteOpen) return;
-    const note = NOTES[id];
+    if (this.noteOpen || this.state !== 'playing') return;
+    const note = DOCUMENTS[String(id)];
     if (!note) return;
     this.noteOpen = true;
+    this.keys = {};
     this.audio.paperRustle();
     $('note-item').textContent = note.item;
-    $('note-title').innerHTML = `${note.title}`;
+    $('note-title').textContent = note.title;
     $('note-cn').textContent = note.cn;
-    $('note-ja').textContent = '';
+    $('note-ja').textContent = note.location;
+    this.investigation.renderPhoto('note-photo', id);
     $('note').classList.remove('hidden');
     if (this._touchUI) this._touchUI.classList.add('hidden');
-    this.controls.unlock();
-    if (!this.notes.has(id)) {
-      this.notes.add(id);
-      this._onNoteFound(id);
+    if (this.controls.isLocked) {
+      this._skipUnlockPause = true;
+      this.controls.unlock();
     }
+    if (this.campaign.collectDocument(id)) {
+      this.notes.add(String(id));
+      this._refreshCampaign();
+    }
+    this.audio.setPaused(true);
+    $('note-close').focus();
   }
 
   _closeNote() {
+    if (this.investigation?.panel) { this.investigation.close(); return; }
     if (!this.noteOpen) return;
     this.noteOpen = false;
+    document.activeElement?.blur();
     $('note').classList.add('hidden');
+    this.audio.setPaused(false);
     if (this._touchUI) this._touchUI.classList.remove('hidden');
     if (this.state === 'playing') this._tryLock();
   }
 
-  _onNoteFound(id) {
-    const n = this.notes.size;
-    this._sub(`找到线索了。　${n} / 3`, `手がかりを見つけた。　${n} / 3`, 2.6);
-    if (n < 3) {
-      this._setObjective(`寻找线索 ${n} / 3`, `手がかりを探せ ${n} / 3`);
-      // after the second note, the presence grows
-      if (n === 2) {
-        setTimeout(() => {
-          this._sub('……气息，变近了。', '……気配が、近くなった。', 3.4);
-          this._setFear(0.35);
-        }, 1500);
-      }
-    } else {
-      this._startFinale();
-    }
-  }
 
   // ------------------------------------------------------------ props handlers
   _toggleTV() {
@@ -1163,7 +1308,7 @@ class Game {
   }
 
   _zoneExitVoid() {
-    if (this.level.exitDoor.open && this.state === 'playing') this._ending();
+    if (this.campaign.flags.released && this.state === 'playing' && !this.noteOpen) this.investigation.chooseEnding();
   }
 
   _zoneCorridorMid() {
@@ -1211,8 +1356,8 @@ class Game {
     if (this.flashOn) {
       this.flashOn = false;
     } else if (this.battery <= 0) {
-      this._sub('手电筒一点反应也没有……没电了。', '', 2.6);
-      return;
+      if (this.spareBatteries > 0) { this.spareBatteries--; this.battery = 55; this.flashOn = true; }
+      else { this._sub('手电筒没电了。寻找电池，或返回章节节点。', '', 2.6); return; }
     } else {
       this.flashOn = true;
     }
@@ -1225,7 +1370,7 @@ class Game {
      场景里三节电池可拾取回充。 */
   _updateBattery(dt) {
     if (this.flashOn) {
-      const rate = this.finale ? 1.1 : 0.55; /* 满电可持续约 180s，终章约 90s */
+      const rate = this.finale ? 0.3 : 0.12; /* 满电可持续约 180s，终章约 90s */
       this.battery = Math.max(0, this.battery - rate * dt);
       if (this.battery <= 0) {
         this.flashOn = false;
@@ -1236,7 +1381,7 @@ class Game {
       }
     }
     // 低电闪烁系数（应用到手电强度上）
-    if (this.flashOn && this.battery < 25) {
+    if (this.flashOn && this.battery < 25 && !this.reduceEffects) {
       this._flashMul = Math.random() < 0.05 ? rand(0.12, 0.5) : (this._flashMul ?? 1) + (1 - (this._flashMul ?? 1)) * Math.min(1, dt * 9);
     } else {
       this._flashMul = 1;
@@ -1255,49 +1400,53 @@ class Game {
 
   _pickupBattery(mesh) {
     const before = this.battery;
-    this.battery = Math.min(100, this.battery + 55);
+    if (before >= 80) this.spareBatteries++;
+    else this.battery = Math.min(100, this.battery + 55);
     mesh.removeFromParent();
     const list = this.level.interactables;
     for (let i = list.length - 1; i >= 0; i--) {
       if (list[i].mesh === mesh) { list.splice(i, 1); break; }
     }
     this.audio.switchClick();
-    this._sub(before >= 100 ? '捡到一节电池，先揣兕里了。' : '换上电池，光稳了下来。', '', 2.4);
+    this._sub(before >= 100 ? '收好一节备用电池。电量用完时按 F 更换。' : '换上电池，光稳了下来。', '', 2.4);
   }
 
   _startFinale() {
+    if (this.finale) return;
     this.finale = true;
-    this.audio.duck();
-    this.audio.sting();
-    this.blackout = true;
-    this.level.exitDoor.locked = false;
-    this._setObjective('上楼——通往外面的门已经打开', '上の階へ——外へ出るドアが開いた');
-    this._sub('它来了。快逃。', '来る。逃げろ。', 4);
-    this._setFear(0.85);
-    setTimeout(() => {
-      this.monster.spawn(new THREE.Vector3(0, 0, 57), 'chase');
-      this.onChaseStart();
-      this._sub('上楼！', '二階へ！', 2);
-    }, 1200);
+    this.audio.duck(); this.audio.sting();
+    this.lightsOutTimer = 3;
+    this._setFear(0.8);
+    this._refreshCampaign();
+    this.storyEvents.push({ delay: 2, hunt: true, action: () => this._spawnHunt() });
   }
 
-  _ending() {
+  _ending(kind) {
     if (this.state === 'ending') return;
+    const result = this.campaign.perform('ending', kind);
+    if (!result.ok) { this._sub(result.message); return; }
+    this.investigation.close();
     this.state = 'ending';
+    this.monster.despawn(); this.ghost.hide();
     this.controls.unlock();
     if (this._touchUI) this._touchUI.classList.add('hidden');
-    this.audio.setFear(0);
+    $('pause').classList.add('hidden');
+    $('hud').classList.add('hidden');
+    this.audio.setPaused(false); this.audio.setFear(0); this.audio.heartbeat(false);
     this.audio.ending();
-    const t = Math.round((performance.now() - this.startTime) / 1000);
+    const ending = ENDINGS[kind];
+    const t = Math.round(this.campaign.elapsed);
     const mm = String(Math.floor(t / 60)).padStart(2, '0');
     const ss = String(t % 60).padStart(2, '0');
-    $('end-text').innerHTML = `${END_TEXT}`;
-    $('end-stats').textContent = `用时 ${mm}:${ss} ／ 线索 3/3 ／ 醒来次数 ${this.scareCount}`;
-    const fade = $('fade');
-    fade.classList.add('white');
-    fade.style.opacity = '1';
-    setTimeout(() => { $('end').classList.remove('hidden'); }, 900);
+    $('end-title').textContent = ending.title;
+    $('end-label').textContent = ending.label;
+    $('end-text').textContent = ending.text;
+    $('end-stats').textContent = '用时 ' + mm + ':' + ss + ' / 记录 ' + this.campaign.documents.size + ' / 醒来 ' + this.scareCount + ' 次';
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.campaign.snapshot())); } catch {}
+    $('fade').style.opacity = '1';
+    setTimeout(() => { $('end').classList.remove('hidden'); $('fade').style.opacity = '0'; }, 900);
   }
+
 
   // ------------------------------------------------------------ scare
   onMonsterAttack() {
@@ -1307,7 +1456,7 @@ class Game {
     this.scareCount++;
     this.shake = 1;
     this._flashRed();
-    $('scare').style.opacity = '1';
+    $('scare').style.opacity = this.reduceEffects ? '0' : '1';
     this.audio.scareBurst();
     this.audio.heartbeat(false);
     this._setFear(1);
@@ -1316,39 +1465,19 @@ class Game {
   }
 
   onMonsterAttackEnd() {
-    // monster finished its lunge; finish the wake-up
     if (this.state !== 'scared') return;
-    const finish = () => {
-      $('scare').style.opacity = '0';
-      $('fade').classList.remove('white');
-      $('fade').style.opacity = '1';
-      setTimeout(() => {
-        // wake up at the entrance
-        this.playerPos.copy(this.level.playerStart);
-        this.char.x0 = this.playerPos.x - PLAYER_R; this.char.x1 = this.playerPos.x + PLAYER_R;
-        this.char.z0 = this.playerPos.z - PLAYER_R; this.char.z1 = this.playerPos.z + PLAYER_R;
-        this.char.y0 = 0; this.char.y1 = PLAYER_H;
-        this.camera.position.set(this.playerPos.x, EYE, this.playerPos.z);
-        this.camera.rotation.set(0, Math.PI, 0);
-        this.eyeY = 0;
-        this.vy = 0;
-        this.monster.despawn();
-        this.audio.heartbeat(false);
-        this.controls.pointerSpeed = this.sens / 0.002;
-        this._setFear(0.25);
-        this.shake = 0;
-        $('fade').style.opacity = '0';
-        $('vignette').classList.toggle('fear', false);
-        this.state = 'playing';
-        this._sub('醒来时，又站在了玄关。', '気がつくと、玄関に立っていた。', 4.2);
-        if (this.finale) {
-          this._sub('它还在追你。', 'まだ、追われている。', 3.4);
-          setTimeout(() => this.monster.spawn(new THREE.Vector3(0, 0, 57), 'chase'), 2500);
-        }
-        this._tryLock();
-      }, 500);
-    };
-    setTimeout(finish, 420);
+    $('scare').style.opacity = '0';
+    $('fade').classList.remove('white');
+    $('fade').style.opacity = '1';
+    setTimeout(() => {
+      this._wakeAtCheckpoint();
+      this.controls.pointerSpeed = this.sens / 0.002;
+      $('fade').style.opacity = '0';
+      $('vignette').classList.remove('fear');
+      this.state = 'playing';
+      this._sub('你在最后一次记起真相的地方醒来。调查进度保留。', '', 4);
+      this._tryLock();
+    }, 700);
   }
 
   onChaseStart() {
@@ -1457,7 +1586,7 @@ class Game {
       this._sub('收音机……自己响了。', 'ラジオが、勝手に鳴った。', 3);
     } else if (r < 0.9 && this.phoneArmed && !this.phoneRinging) {
       this._phoneRings();
-    } else if (r < 0.96 && this.notes.size >= 2 && this.monster.state === 'dormant' && !this.finale) {
+    } else if (r < 0.96 && this.campaign.flags.power && this.monster.state === 'dormant' && !this.finale) {
       this.monster.spawn(new THREE.Vector3(0, 0, 55.5), 'stalk');
       this.monster.tempLife = 3;
       this.audio.moan(0);
@@ -1505,19 +1634,43 @@ class Game {
     const dt = Math.min(0.05, (this.lastT ? (now - this.lastT) / 1000 : 0.016));
     this.lastT = now;
     this.time += dt;
+    this.investigation.update(dt);
+    const active = this.state === 'playing' && !this.noteOpen && $('pause').classList.contains('hidden');
+    if (active) {
+      this.campaign.elapsed += dt;
+      for (const event of this.storyEvents) event.delay -= dt;
+      const due = this.storyEvents.filter((event) => event.delay <= 0);
+      this.storyEvents = this.storyEvents.filter((event) => event.delay > 0);
+      for (const event of due) event.action();
+      if (this.chapterTimer > 0 && (this.chapterTimer -= dt) <= 0) $('chapter-card').classList.add('hidden');
+      if (this.saveNotice > 0 && (this.saveNotice -= dt) <= 0) $('save-status').textContent = '';
+      $('location-label').textContent = currentArea(this.playerPos);
+    }
+    if (this.state === 'title') {
+      this.camera.position.set(-22, 2.8 + EYE, 37.8);
+      this.camera.rotation.set(-.025, .26 + Math.sin(this.time * .055) * .055, 0);
+    }
 
     if (this.touchMode) this._autoResolution(dt);
 
-    if (this.state === 'playing' || this.state === 'scared') {
+    if (active || this.state === 'scared') {
       const scared = this.state === 'scared';
-      if (!scared) this._updatePlayer(dt);
+      if (!scared && !this.hiding) this._updatePlayer(dt);
       this._updateInteractPrompt();
-      this._updateDirector(dt);
-      this._updateBattery(dt);
+      if (!scared) { this.atmosphere.update(dt); this._updateDirector(dt); this._updateBattery(dt); }
     }
 
+    this.skyMaterial.uniforms.uTime.value = this.time;
     this.level.update(dt, this.time, this.camera.position,
-      this.camera.getWorldDirection(this._viewDir || (this._viewDir = new THREE.Vector3())));
+      this.camera.getWorldDirection(this._viewDir || (this._viewDir = new THREE.Vector3())), this.reduceEffects);
+    if (this.level.campaign.rain) {
+      const array = this.level.campaign.rain.geometry.attributes.position.array;
+      for (let i = 0; i < array.length; i += 6) {
+        array[i + 1] -= dt * 5; array[i + 4] -= dt * 5;
+        if (array[i + 1] < (i >= 540 ? 5.9 : 2.9)) { array[i + 1] += 9; array[i + 4] += 9; }
+      }
+      this.level.campaign.rain.geometry.attributes.position.needsUpdate = true;
+    }
     const tv = this.level.props.tv;
     // a switched-off TV must be a dark screen, not an always-on static glow
     tv.screen.visible = tv.on;
@@ -1617,11 +1770,11 @@ class Game {
     }
 
     // monster + ghost
-    this._updateMonster(dt);
-    this.ghost.update(dt, this.playerPos);
+    if (active || this.state === 'scared') this._updateMonster(dt);
+    if (active) this.ghost.update(dt, this.playerPos);
 
     // fear decay
-    if (this.state === 'playing') {
+    if (active) {
       this._setFear(Math.max(0.12, this.fear - dt * 0.02));
       if (this.monster.state === 'chase') this._setFear(Math.min(1, this.fear + dt * 0.12));
       if (this.monster.state === 'stalk') {
@@ -1644,9 +1797,10 @@ class Game {
       this.camera.updateProjectionMatrix();
     }
     this.grade.uniforms.uTime.value = this.time;
-    this.grade.uniforms.uFear.value = this.fear;
-    this.grade.uniforms.uDistort.value = this.state === 'scared' ? Math.min(1, this.scaredTimer) : this.shake;
+    this.grade.uniforms.uFear.value = this.reduceEffects ? 0 : this.fear;
+    this.grade.uniforms.uDistort.value = this.reduceEffects ? 0 : this.state === 'scared' ? Math.min(1, this.scaredTimer) : this.shake;
     this.coneMat.uniforms.uTime.value = this.time;
+    this.torchModel.visible = this.state === 'playing' && !this.hiding;
 
     // dust drift
     this._updateDust(dt);
@@ -1654,7 +1808,7 @@ class Game {
     // audio hum follows nearby lights
     this.audio.setHum(this.level.humLevel(this.camera.position));
     // generative score + night wind (stronger upstairs and at the stairwells)
-    this.audio.updateMusic(dt, this.fear, this.monster.state === 'chase' || this.monster.state === 'attack');
+    if (active) this.audio.updateMusic(dt, this.fear, this.monster.state === 'chase' || this.monster.state === 'attack');
     this.audio.setWind(clamp(0.3 + (this.playerPos.y > 2.5 ? 0.2 : 0) +
       (this.playerPos.z < 2.2 || this.playerPos.z > 56 ? 0.3 : 0), 0, 1));
     // the storm's rain bed follows the same spatial cues as the wind.
@@ -1830,7 +1984,7 @@ class Game {
       flashI = 6.5 * close * (this._flashMul ?? 1);
       const nearMonster = this.monster.state === 'stalk' || this.monster.state === 'chase';
       const md = Math.hypot(this.monster.pos.x - this.playerPos.x, this.monster.pos.z - this.playerPos.z);
-      if (nearMonster && md < 5) {
+      if (nearMonster && md < 5 && !this.reduceEffects) {
         flashI = flashI * (0.55 + 0.45 * Math.sin(this.time * 41 + md * 9));
       }
     }
@@ -1857,15 +2011,21 @@ class Game {
   // what the player is standing on (footstep timbre must match the room)
   _floorSurface() {
     const p = this.playerPos;
-    if (p.x > 1.3 && p.x < 8.4 && p.z > 0 && p.z < 8.5) return 'tatami';    // altar
+    if (p.y < -.8 || p.y > 4.8 || p.z > 61.6) return 'concrete';
+    if (p.y > 2 && p.x < -1) {
+      const area=currentArea(p);
+      return ['西翼封闭走廊','红灯暗房'].includes(area) ? 'concrete' : 'wood';
+    }
+    if (p.y < 1.5 && p.x > 7 && p.z >= 32 && p.z < 46) return 'concrete';
+    if (p.y < 1.5 && p.x > 1.3 && p.x < 8.4 && p.z > 0 && p.z < 8.5) return 'tatami';    // altar
     if (p.z < 0) return 'concrete';                                          // entry
     if (p.z > 57.5 && p.y < 2.7) return 'concrete';                          // east stairwell
-    if (p.x < -13.8 && p.z > 13.8) return 'concrete';                        // passage + bathroom
+    if (p.y < 1.5 && p.x < -13.8 && p.z > 13.8) return 'concrete';          // passage + bathroom
     return 'wood';
   }
 
   _updateInteractPrompt() {
-    if (this.noteOpen) { this._prompt(null); return; }
+    if (this.noteOpen || this.hiding) { this._prompt(null); return; }
     const hit = this._raycastTarget();
     this._prompt(hit ? hit.interactable.label : null);
     // on touch devices the E-key hint is hidden: the interact button itself
@@ -1882,6 +2042,14 @@ class Game {
   }
 
   _updateMonster(dt) {
+    if (this.hiding) {
+      this.hideTimer += dt;
+      if (this.hideTimer > 5) {
+        this.monster.despawn();
+        if (this._hbOn) { this._hbOn = false; this.audio.heartbeat(false); }
+      }
+      return;
+    }
     const p = this.playerPos;
     // 复用临时向量：这段每帧执行，避免三个 Vector3 分配的 GC 压力
     const dir = this._mDir || (this._mDir = new THREE.Vector3());
@@ -1891,7 +2059,11 @@ class Game {
     const toM = this._mTo || (this._mTo = new THREE.Vector3());
     toM.set(this.monster.pos.x - p.x, 0, this.monster.pos.z - p.z);
     const md = toM.length();
-    const flashHit = this.flashOn && md > 0.01 && md < 22 && dir.dot(toM.normalize()) > 0.94;
+    const flashHit = this.flashOn && md > 0.01 && md < 22 &&
+      Math.abs(this.monster.pos.y - p.y) < 1 &&
+      dir.dot(toM.normalize()) > 0.94 &&
+      !interactionBlocked(this.camera.position, this.monster.pos.clone().add(new THREE.Vector3(0, 1.2, 0)),
+        this.level.colliders, this.level.doors);
 
     const pl = this._mPl || (this._mPl = new THREE.Vector3());
     pl.set(p.x, p.y, p.z);
@@ -1901,6 +2073,8 @@ class Game {
       flashHit,
       time: this.time,
       colliders: this._dynColliders(),
+      stairs: this.level.stairs,
+      reduceEffects: this.reduceEffects,
       doors: this.level.doors,
       nodes: this.level.monsterNodes,
       audio: this.audio,
@@ -1915,6 +2089,7 @@ class Game {
   // lightning: window panes + sky hemisphere flash in 1-3 spikes, thunder
   // arrives later the farther the strike landed
   _updateLightning(dt) {
+    if (this.reduceEffects) return;
     const L = this.lightning;
     const moonWin = this.level.materials.moonWin;
     if (L.t > 0) {
@@ -1978,6 +2153,7 @@ class Game {
 }
 
 // ---------------------------------------------------------------- boot
+$('error-retry').addEventListener('click', () => location.reload());
 try {
   window.__game = new Game();
   // headless/debug: ?autostart=1 skips the title screen (pointer lock will fail silently)

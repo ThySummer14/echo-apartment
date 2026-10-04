@@ -1,6 +1,8 @@
-// monster.js — the low-poly, wrong-proportioned humanoid ("the tall black one")
+import { stairNavigationTarget } from './stairs.js';
+// monster.js — the wrong-proportioned humanoid ("the tall black one")
 // and the pale ghost girl. Fully procedural models + procedural animation.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
+import { interactionBlocked } from './interaction.js';
 import {
   makeBoxGeo, stdMat, basicMat, aabbFromSphere, moveWithCollisions, clamp, lerp, rand, mulberry32,
 } from './util.js';
@@ -53,17 +55,22 @@ export class Monster {
     this.legL = new THREE.Group(); this.legR = new THREE.Group();
     this.legL.position.set(-0.14, 0.95, 0); this.legR.position.set(0.14, 0.95, 0);
     this.group.add(this.legL, this.legR);
-    add(makeBoxGeo(0.12, 0.95, 0.15, { jitter: 0.01 }), skin, this.legL, 0, -0.45, 0);
-    add(makeBoxGeo(0.12, 0.95, 0.15, { jitter: 0.01 }), skin, this.legR, 0, -0.45, 0);
+    for (const leg of [this.legL, this.legR]) {
+      add(new THREE.CylinderGeometry(0.065, 0.042, 0.91, 18), skin, leg, 0, -0.45, 0);
+      add(new THREE.SphereGeometry(0.068, 16, 10), skin, leg, 0, -0.49, 0.01);
+      add(new THREE.BoxGeometry(0.105, 0.055, 0.23), dark, leg, 0, -0.92, 0.06);
+    }
 
     // --- pelvis ---
-    add(makeBoxGeo(0.34, 0.22, 0.22, { jitter: 0.008 }), skin, this.group, 0, 0.96, 0);
+    const pelvis = new THREE.SphereGeometry(.17,20,12); pelvis.scale(1,.65,.65);
+    add(pelvis, skin, this.group, 0, .96, 0);
 
     // --- torso (hunched, tapered) ---
     this.torso = new THREE.Group();
-    this.torso.position.set(0, 1.18, 0);
+    this.torso.position.set(0, 1.4, 0);
     this.group.add(this.torso);
-    const torsoGeo = makeBoxGeo(0.44, 0.85, 0.26, { jitter: 0.014 });
+    const torsoGeo = new THREE.CylinderGeometry(0.22, 0.16, 0.85, 24, 8);
+    torsoGeo.scale(1, 1, 0.65);
     // taper shoulders by scaling top verts slightly
     const pos = torsoGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -89,19 +96,28 @@ export class Monster {
     this.headG = new THREE.Group();
     this.headG.position.set(0, 2.0, 0.02);
     this.group.add(this.headG);
-    add(makeBoxGeo(0.1, 0.14, 0.1), skin, this.headG, 0, -0.08, 0);
-    const headGeo = makeBoxGeo(0.3, 0.4, 0.28, { jitter: 0.02 });
+    add(new THREE.CylinderGeometry(.047,.068,.34,16), skin, this.headG, 0, -.12, 0);
+    const headGeo = new THREE.SphereGeometry(0.19, 28, 20);
+    headGeo.scale(0.86, 1.2, 0.82);
     const head = add(headGeo, skin, this.headG, 0, 0.18, 0.01);
     head.name = 'monsterHead';
     // face plane: hollow eyes, gaping mouth
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.34), basicMat({ map: t.face }));
+    const faceGeometry = new THREE.PlaneGeometry(.26,.34,12,14);
+    const facePositions = faceGeometry.attributes.position;
+    for (let i=0;i<facePositions.count;i++) {
+      const x=facePositions.getX(i)/.13,y=facePositions.getY(i)/.17;
+      facePositions.setZ(i,-.035*(x*x+y*y));
+    }
+    faceGeometry.computeVertexNormals();
+    const face = new THREE.Mesh(faceGeometry, stdMat({ map:t.face, roughness:1 }));
     face.position.set(0, 0.18, 0.152);
     this.headG.add(face);
     // separate lower jaw - it drops open when it hunts
     this.jaw = new THREE.Group();
     this.jaw.position.set(0, 0.08, 0.02);
     this.headG.add(this.jaw);
-    add(makeBoxGeo(0.2, 0.1, 0.2, { jitter: 0.02 }), skin, this.jaw, 0, -0.04, 0.02);
+    const jawGeometry = new THREE.SphereGeometry(.1,20,12); jawGeometry.scale(1,.5,1);
+    add(jawGeometry, skin, this.jaw, 0, -.04, .02);
     // glowing ember eyes (flare up in chase)
     const eyeMat = stdMat({ color: 0x1a0505, emissive: 0x8a1410, emissiveIntensity: 0 });
     this.eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.02), eyeMat);
@@ -110,27 +126,25 @@ export class Monster {
     this.eyeR.position.set(0.07, 0.2, 0.156);
     this.headG.add(this.eyeL, this.eyeR);
     this.eyeMat = eyeMat;
-    // hair shards
-    for (let i = 0; i < 5; i++) {
-      const shard = add(
-        makeBoxGeo(0.05 + rand(0, 0.04), 0.34 + rand(0, 0.22), 0.04, { jitter: 0.01 }),
-        dark, this.headG,
-        rand(-0.11, 0.11), 0.36 + rand(0, 0.06), rand(-0.12, 0.05)
-      );
-      shard.rotation.z = rand(-0.25, 0.25);
-      shard.rotation.x = rand(-0.2, 0.2);
+    // 湿发沿头部垂落；曲线发束取代尖锐方块。
+    for (let i = 0; i < 14; i++) {
+      const angle=i/14*Math.PI*2, x=Math.cos(angle)*.12,z=Math.sin(angle)*.11;
+      const curve=new THREE.CatmullRomCurve3([new THREE.Vector3(x*.5,.4,z*.5),new THREE.Vector3(x,.32,z),
+        new THREE.Vector3(x*1.2,.14,z*1.3),new THREE.Vector3(x*1.1,-.13-(i%3)*.04,z*1.4)]);
+      add(new THREE.TubeGeometry(curve,8,.012+(i%3)*.002,5,false),dark,this.headG);
     }
 
     // --- arms (one longer, reaching the knees) ---
     this.armL = new THREE.Group(); this.armR = new THREE.Group();
     this.armL.position.set(-0.26, 1.94, 0); this.armR.position.set(0.26, 1.94, 0);
     this.group.add(this.armL, this.armR);
-    const armLGeo = makeBoxGeo(0.11, 1.22, 0.13, { jitter: 0.01 });
-    add(armLGeo, skin, this.armL, 0, -0.6, 0.02);
-    const armRGeo = makeBoxGeo(0.11, 1.34, 0.13, { jitter: 0.01 });
-    add(armRGeo, skin, this.armR, 0, -0.66, 0.02);
-    add(makeBoxGeo(0.13, 0.2, 0.15, { jitter: 0.012 }), skin, this.armL, 0, -1.28, 0);
-    add(makeBoxGeo(0.13, 0.2, 0.15, { jitter: 0.012 }), skin, this.armR, 0, -1.4, 0);
+    for (const [arm, length] of [[this.armL, 1.22], [this.armR, 1.34]]) {
+      add(new THREE.CylinderGeometry(.057,.044,length*.46,18),skin,arm,0,-length*.23,.02);
+      add(new THREE.SphereGeometry(.061,16,10),skin,arm,0,-length*.46,.02);
+      add(new THREE.CylinderGeometry(.044,.031,length*.54,18),skin,arm,0,-length*.73,.02);
+    }
+    const handGeometry=new THREE.SphereGeometry(.075,16,12);handGeometry.scale(.8,1.3,.65);
+    add(handGeometry,skin,this.armL,0,-1.28,0);add(handGeometry,skin,this.armR,0,-1.4,0);
     // too-long fingers
     for (const arm of [this.armL, this.armR]) {
       for (let i = 0; i < 4; i++) {
@@ -204,7 +218,11 @@ export class Monster {
     const dx = p.x - this.pos.x, dz = p.z - this.pos.z;
     const dist = Math.hypot(dx, dz);
     const toPlayer = new THREE.Vector3(dx, 0, dz).normalize();
-    const looking = toPlayer.dot(ctx.lookDir) > 0.55;
+    const sameFloor = Math.abs(p.y - this.pos.y) < 1;
+    const canSee = sameFloor && !interactionBlocked(
+      this.pos.clone().add(new THREE.Vector3(0, 1.4, 0)),
+      p.clone().add(new THREE.Vector3(0, 1.3, 0)), ctx.colliders, ctx.doors);
+    const looking = canSee && toPlayer.dot(ctx.lookDir) < -0.55;
 
     // --- procedural animation ---
     const animSpeed = this.state === 'chase' ? 2.0 : 0.7;
@@ -244,7 +262,7 @@ export class Monster {
     }
 
     // --- flashlight visibility flicker ---
-    if (ctx.flashHit && dist < 22) {
+    if (ctx.flashHit && dist < 22 && !ctx.reduceEffects) {
       this.visible = Math.sin(ctx.time * 88 + this.walkPhase) > -0.15;
     } else this.visible = true;
     this.group.visible = this.visible && this.state !== 'gone';
@@ -289,7 +307,7 @@ export class Monster {
         this.stepTimer = 0.5;
         ctx.audio.thud();
       }
-      if (dist < 1.3 && ctx.time > 0) {
+      if (dist < 1.3 && canSee && ctx.time > 0) {
         this.state = 'attack';
         this.attackTimer = 0.42;
         this._teleportTowardPlayer(ctx, 0.55); // lunge
@@ -330,23 +348,18 @@ export class Monster {
 
   _moveToward(ctx, dt, speed) {
     const p = ctx.player;
-    const dx = p.x - this.pos.x, dz = p.z - this.pos.z;
+    let targetX = p.x, targetZ = p.z;
+    const stairTarget = stairNavigationTarget(ctx.stairs || [], this.pos, p);
+    if (stairTarget) { targetX = stairTarget.x; targetZ = stairTarget.z; }
+    const dx = targetX - this.pos.x, dz = targetZ - this.pos.z;
     const d = Math.max(0.0001, Math.hypot(dx, dz));
     const step = Math.min(d, speed * dt);
     this._syncChar();
-    moveWithCollisions(this.char, (dx / d) * step, 0, (dz / d) * step, ctx.colliders, 0.4, { bodyHeight: 1.0 });
+    moveWithCollisions(this.char, (dx / d) * step, -0.12, (dz / d) * step,
+      ctx.colliders, 0.4, { bodyHeight: 1.0 });
     this.pos.x = (this.char.x0 + this.char.x1) / 2;
     this.pos.z = (this.char.z0 + this.char.z1) / 2;
-    // snap to the ground under the feet (climbs stairs, follows floor levels)
-    let support = -Infinity;
-    const cx = (this.char.x0 + this.char.x1) / 2, cz = (this.char.z0 + this.char.z1) / 2;
-    for (const b of ctx.colliders) {
-      if (b.x0 < this.char.x1 && b.x1 > this.char.x0 && b.z0 < this.char.z1 && b.z1 > this.char.z0) {
-        if (b.y1 <= this.pos.y + 0.45 && b.y1 > support &&
-            b.x0 < cx && b.x1 > cx && b.z0 < cz && b.z1 > cz) support = b.y1;
-      }
-    }
-    if (support > -1e9 && Math.abs(support - this.pos.y) <= 0.45) this.pos.y = support;
+    this.pos.y = this.char.y0;
     this.group.position.x = this.pos.x;
     this.group.position.z = this.pos.z;
     this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.03;
@@ -389,6 +402,7 @@ export class Monster {
     const nodes = ctx.nodes;
     let best = null, bestErr = Infinity;
     for (const n of nodes) {
+      if (Math.abs(n.y - ctx.player.y) > 0.5) continue;
       const d = Math.hypot(n.x - ctx.player.x, n.z - ctx.player.z);
       if (d < dMin || d > dMax) continue;
       // skip nodes that would embed the monster in a wall/object

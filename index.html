@@ -1,483 +1,134 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>回声公寓 残響アパート — ECHO APARTMENT</title>
-<style>
-  :root {
-    --red: #b01010;
-    --red-dim: #6e0a0a;
-    --paper: #cfc3a4;
-    --ink: #171310;
-    --teal: #9fd8d0;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    background: #010203;
-    overflow: hidden;
-    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "MS PGothic", "Courier New", monospace;
-    color: #c8c8c8;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-    overscroll-behavior: none;
-    touch-action: none;
-    position: fixed;
-    inset: 0;
-  }
-  canvas#game {
-    position: fixed; left: 50%; top: 50%;
-    transform: translate(-50%, -50%);
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-    background: #000;
-  }
-
-  /* ---------- screen layers ---------- */
-  .screen {
-    position: fixed; inset: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    z-index: 20;
-  }
-  .hidden { display: none !important; }
-
-  /* CRT scanlines + vignette over everything */
-  #crt {
-    position: fixed; inset: 0; z-index: 8; pointer-events: none;
-    background:
-      repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0px, rgba(0,0,0,0.22) 1px, transparent 1px, transparent 3px);
-    mix-blend-mode: multiply;
-  }
-  #vignette {
-    position: fixed; inset: 0; z-index: 9; pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.62) 100%);
-  }
-  #vignette.fear { animation: vfear 0.9s ease-in-out infinite; }
-  @keyframes vfear {
-    0%   { background: radial-gradient(ellipse at center, transparent 30%, rgba(40,0,0,0.55) 100%); }
-    50%  { background: radial-gradient(ellipse at center, transparent 48%, rgba(80,0,0,0.8) 100%); }
-    100% { background: radial-gradient(ellipse at center, transparent 30%, rgba(40,0,0,0.55) 100%); }
-  }
-
-  /* ---------- title ---------- */
-  #title { background: #020304; z-index: 30; cursor: pointer; text-align: center; }
-  #title .noise {
-    position: absolute; inset: 0; opacity: 0.05; pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-  }
-  #title h1 {
-    font-size: clamp(44px, 9vw, 110px);
-    letter-spacing: 0.18em;
-    color: var(--red);
-    text-shadow: 0 0 18px rgba(176,16,16,0.55), 0 0 60px rgba(120,8,8,0.35);
-    font-weight: 700;
-    margin-bottom: 10px;
-  }
-  #title h2 {
-    font-size: clamp(12px, 2vw, 20px);
-    letter-spacing: 0.5em;
-    color: #7a8288;
-    margin-bottom: 46px;
-    font-weight: 400;
-  }
-  #title .controls {
-    font-size: clamp(11px, 1.4vw, 15px);
-    color: #8b9196;
-    line-height: 2.1;
-    letter-spacing: 0.06em;
-  }
-  #title .controls b { color: #b9c0c5; font-weight: 600; }
-  #title .start {
-    margin-top: 44px;
-    font-size: clamp(14px, 2vw, 20px);
-    color: #cfd4d8;
-    letter-spacing: 0.35em;
-    animation: blink 1.6s steps(2, start) infinite;
-  }
-  #title .warn { margin-top: 18px; font-size: 11px; color: #5c6266; letter-spacing: 0.2em; }
-  @keyframes blink { 0%,60% { opacity: 1; } 61%,100% { opacity: 0.15; } }
-
-  /* ---------- HUD ---------- */
-  #hud { z-index: 10; pointer-events: none; }
-  #crosshair {
-    position: fixed; left: 50%; top: 50%;
-    width: 5px; height: 5px; border-radius: 50%;
-    background: rgba(220,230,235,0.75);
-    box-shadow: 0 0 6px rgba(160,200,220,0.8);
-    transform: translate(-50%,-50%);
-    z-index: 11;
-  }
-  #objective {
-    position: fixed; top: 22px; left: 26px; z-index: 11;
-    font-size: 15px; letter-spacing: 0.14em;
-    color: #9aa2a8;
-    text-shadow: 0 1px 4px #000;
-    border-left: 3px solid var(--red-dim);
-    padding-left: 12px;
-  }
-  /* 手电电量条：细条贴在目标提示下方，低电量变红并闪烁（报告 2.2：理智量化被打破） */
-  #battery {
-    position: fixed; z-index: 11;
-    top: 64px; left: 29px;
-    width: 92px; height: 7px;
-    background: rgba(255,255,255,0.10);
-    border-radius: 4px;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  #battery-fill {
-    height: 100%; width: 100%;
-    background: #9fb8a8;
-    border-radius: 4px;
-    transition: width 0.25s linear;
-  }
-  #battery.low #battery-fill {
-    background: #c8404a;
-    animation: batt-blink 0.9s steps(2) infinite;
-  }
-  @keyframes batt-blink { 50% { opacity: 0.35; } }
-  #objective .obj-ja {
-    font-size: 11px; opacity: 0.75; margin-top: 3px; letter-spacing: 0.08em;
-  }
-  #prompt {
-    position: fixed; left: 50%; bottom: 13%; transform: translateX(-50%);
-    z-index: 11;
-    font-size: 16px; letter-spacing: 0.1em;
-    background: rgba(4,7,10,0.72);
-    border: 1px solid rgba(150,170,180,0.35);
-    padding: 8px 16px;
-    color: #cdd6da;
-    text-shadow: 0 1px 3px #000;
-  }
-  #prompt .key {
-    display: inline-block;
-    border: 1px solid #7b8890; border-radius: 3px;
-    padding: 0 7px; margin-right: 8px;
-    background: rgba(30,40,48,0.8);
-    color: #e8eef0; font-size: 13px;
-  }
-  #subtitle {
-    position: fixed; left: 50%; bottom: 24%; transform: translateX(-50%);
-    z-index: 11; text-align: center;
-    pointer-events: none;
-  }
-  #subtitle .cn {
-    font-size: clamp(16px, 2.4vw, 24px);
-    color: #d8d5cc;
-    letter-spacing: 0.12em;
-    font-family: "Songti SC", "Noto Serif CJK SC", "Hiragino Mincho ProN", "Yu Mincho", serif;
-    text-shadow: 0 0 10px rgba(0,0,0,0.9), 0 2px 4px #000;
-    opacity: 0; transition: opacity 0.5s ease;
-  }
-  #subtitle .ja {
-    font-size: clamp(11px, 1.4vw, 14px);
-    color: #7c8488;
-    letter-spacing: 0.1em;
-    margin-top: 6px;
-    opacity: 0; transition: opacity 0.5s ease;
-  }
-  #subtitle.on .cn, #subtitle.on .ja { opacity: 1; }
-
-  #flash {
-    position: fixed; inset: 0; z-index: 12; pointer-events: none;
-    background: radial-gradient(ellipse at center, rgba(120,0,0,0.25) 30%, rgba(150,0,0,0.85) 100%);
-    opacity: 0; transition: opacity 0.09s ease-out;
-  }
-
-  /* ---------- jumpscare ---------- */
-  #scare {
-    position: fixed; inset: 0; z-index: 40; pointer-events: none;
-    background: #000; opacity: 0;
-  }
-  #scare canvas { width: 100%; height: 100%; image-rendering: pixelated; }
-
-  /* ---------- note UI ---------- */
-  #note {
-    position: fixed; inset: 0; z-index: 35;
-    background: rgba(2,4,6,0.82);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-  }
-  #note .paper {
-    width: min(560px, 86vw);
-    background:
-      linear-gradient(180deg, rgba(60,50,30,0.12) 0%, transparent 8%),
-      var(--paper);
-    color: var(--ink);
-    padding: 34px 38px 30px;
-    box-shadow: 0 0 80px rgba(0,0,0,0.9), inset 0 0 60px rgba(80,60,30,0.25);
-    transform: rotate(-0.6deg);
-    position: relative;
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif;
-  }
-  #note .paper::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.35;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
-    mix-blend-mode: multiply;
-  }
-  #note .n-title {
-    font-size: 20px; font-weight: 700; letter-spacing: 0.2em;
-    border-bottom: 2px solid rgba(60,45,25,0.5);
-    padding-bottom: 10px; margin-bottom: 18px;
-  }
-  #note .n-cn {
-    font-size: 17px; line-height: 2.0; white-space: pre-wrap;
-    font-family: "Songti SC", "Noto Serif CJK SC", "Hiragino Mincho ProN", "Yu Mincho", serif;
-  }
-  #note .n-ja { font-size: 12.5px; line-height: 1.8; color: #4c4436; margin-top: 14px; white-space: pre-wrap; }
-  #note .n-ja-title { font-size: 13px; color: #6d6350; font-weight: 400; letter-spacing: 0.08em; }
-  #note .n-hint { margin-top: 20px; font-size: 12px; color: #6d6350; letter-spacing: 0.2em; text-align: center; }
-  #note .n-item { position: absolute; top: 22px; left: 26px; font-size: 11px; color: #7a6f55; }
-
-  /* ---------- pause ---------- */
-  #pause { background: rgba(2,4,6,0.86); z-index: 32; cursor: pointer; }
-  #pause h2 { font-size: 34px; color: #b9c0c5; letter-spacing: 0.5em; margin-bottom: 30px; font-weight: 500; }
-  #pause p { font-size: 14px; color: #8b9196; line-height: 2.2; text-align: center; letter-spacing: 0.08em; }
-  #pause .sensbox {
-    margin-top: 18px;
-    padding: 12px 22px;
-    border: 1px solid rgba(159,216,208,0.25);
-    border-radius: 2px;
-    background: rgba(8,14,16,0.7);
-    text-align: center;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  #pause .sensbox label {
-    display: block;
-    font-size: 12px;
-    color: #9fd8d0;
-    letter-spacing: 0.25em;
-    margin-bottom: 8px;
-  }
-  #pause .sensbox input[type=range] {
-    width: 240px;
-    accent-color: var(--teal);
-    cursor: pointer;
-  }
-  #pause .sensbox .sens-hint {
-    margin-top: 6px;
-    font-size: 10px;
-    color: #5c6266;
-    letter-spacing: 0.1em;
-  }
-  #pause .resume { margin-top: 26px; font-size: 16px; color: #cfd4d8; animation: blink 1.6s steps(2,start) infinite; }
-
-  /* ---------- ending ---------- */
-  #end { background: #010102; z-index: 34; text-align: center; }
-  #end h1 { font-size: clamp(26px, 5vw, 52px); color: var(--red); letter-spacing: 0.3em; margin-bottom: 34px; font-weight: 700; }
-  #end .end-text { font-size: clamp(13px, 1.8vw, 17px); color: #b9b3a4; line-height: 2.4; letter-spacing: 0.1em; white-space: pre-wrap; margin-bottom: 40px; }
-  #end .end-stats { font-size: 13px; color: #6b7278; letter-spacing: 0.2em; margin-bottom: 46px; line-height: 2; }
-  #end .again {
-    font-size: 18px; color: #cfd4d8; letter-spacing: 0.35em;
-    border: 1px solid #4a545c; padding: 12px 34px; cursor: pointer;
-    transition: all 0.2s;
-  }
-  #end .again:hover { border-color: var(--red); color: #ffd9d9; text-shadow: 0 0 12px rgba(176,16,16,0.7); }
-
-  /* ---------- fade ---------- */
-  #fade {
-    position: fixed; inset: 0; z-index: 45; pointer-events: none;
-    background: #000; opacity: 0; transition: opacity 0.6s ease;
-  }
-  #fade.white { background: #e8ecf0; }
-
-  #error {
-    background: #050607; z-index: 50; text-align: center; padding: 30px;
-    color: #c86a6a; font-size: 15px; line-height: 2.2; letter-spacing: 0.1em;
-  }
-
-  /* ---------- touch controls ---------- */
-  #touch-ui { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
-  #touch-ui.hidden { display: none !important; }
-  #joy-zone {
-    position: absolute;
-    left: calc(4% + env(safe-area-inset-left, 0px));
-    bottom: calc(5% + env(safe-area-inset-bottom, 0px));
-    width: 128px; height: 128px;
-    pointer-events: auto;
-  }
-  #joy-base {
-    position: absolute; inset: 0;
-    border-radius: 50%;
-    background: rgba(20, 28, 34, 0.35);
-    border: 1px solid rgba(150, 170, 180, 0.35);
-  }
-  #joy-knob {
-    position: absolute; left: 50%; top: 50%;
-    width: 52px; height: 52px; margin: -26px 0 0 -26px;
-    border-radius: 50%;
-    background: rgba(160, 190, 205, 0.45);
-    border: 1px solid rgba(200, 225, 235, 0.5);
-    box-shadow: 0 0 12px rgba(120, 180, 200, 0.25);
-  }
-  .tbtn {
-    position: absolute;
-    pointer-events: auto;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    background: rgba(20, 28, 34, 0.45);
-    border: 1px solid rgba(150, 170, 180, 0.4);
-    color: #cdd6da;
-    font-size: 14px; letter-spacing: 0.08em;
-    text-shadow: 0 1px 3px #000;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .tbtn:active, .tbtn.on { background: rgba(80, 120, 135, 0.55); border-color: rgba(200, 230, 240, 0.7); }
-  #btn-interact {
-    right: calc(5% + env(safe-area-inset-right, 0px));
-    bottom: calc(7% + env(safe-area-inset-bottom, 0px));
-    width: 84px; height: 84px; font-size: 16px;
-  }
-  #btn-interact.avail { border-color: #9fd8d0; box-shadow: 0 0 14px rgba(120, 210, 195, 0.5); }
-  #btn-flash {
-    right: calc(26% + env(safe-area-inset-right, 0px));
-    bottom: calc(20% + env(safe-area-inset-bottom, 0px));
-    width: 58px; height: 58px;
-  }
-  #btn-run {
-    right: calc(6% + env(safe-area-inset-right, 0px));
-    bottom: calc(34% + env(safe-area-inset-bottom, 0px));
-    width: 58px; height: 58px;
-  }
-  /* 手机适配：暂停键挪到左上角——容器会在右上角悬浮官方按钮（分享/⋯），
-     整个右上区域必须留空；带刘海安全区 */
-  #btn-pause {
-    left: calc(12px + env(safe-area-inset-left, 0px));
-    top: calc(12px + env(safe-area-inset-top, 0px));
-    width: 42px; height: 42px; border-radius: 8px; font-size: 15px;
-  }
-  /* 触屏模式下目标提示下移，给左上角的暂停键让位 */
-  body.touch #objective {
-    top: calc(66px + env(safe-area-inset-top, 0px));
-    left: calc(14px + env(safe-area-inset-left, 0px));
-  }
-  @media (max-width: 760px) {
-    #objective { font-size: 12px; top: 14px; left: 14px; }
-    #subtitle .cn { font-size: 15px; }
-    .tbtn { font-size: 12px; }
-    #btn-interact { width: 72px; height: 72px; font-size: 14px; }
-  }
-  /* 伪横屏（转屏锁定用户）：整个舞台由 rotate.js 旋转 90°。
-     内容左上角会落到屏幕右上角（官方悬浮按钮区），所以把内容左上/右上的元素都换位：
-     暂停键并入右侧按钮列，目标提示改到内容左下角；安全区 env 是物理方向的，
-     在旋转后含义错乱，一律改回纯百分比 */
-  html.forced #btn-pause {
-    left: auto; top: auto;
-    right: calc(6% + 66px); bottom: 34%;
-    border-radius: 50%;
-  }
-  html.forced body.touch #objective {
-    top: auto; bottom: calc(14px + 6px);
-    left: 14px;
-  }
-  html.forced #joy-zone { left: 4%; bottom: 5%; }
-  html.forced #btn-interact { right: 5%; bottom: 7%; }
-  html.forced #btn-flash { right: 26%; bottom: 20%; }
-  html.forced #btn-run { right: 6%; bottom: 34%; }
-  html.forced #rotate-hint { display: none !important; }
-
-  /* landscape is the intended orientation; in portrait show a gentle hint */
-  #rotate-hint {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 60;
-    background: rgba(4, 7, 10, 0.85);
-    color: #9fd8d0; font-size: 12px; letter-spacing: 0.15em;
-    text-align: center; padding: 8px 10px;
-    pointer-events: none;
-  }
-  @media (orientation: landscape) { #rotate-hint { display: none; } }
-  /* touch mode: the E-key badge is meaningless without a keyboard */
-  body.touch #prompt .key { display: none; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#0a1010">
+  <meta name="description" content="回声公寓：一封来信，一场没有结束的捉迷藏。浏览器第一人称心理恐怖游戏。">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>回声公寓 · 残響アパート</title>
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/game.css?v=41c804fc4c">
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <canvas id="game" aria-label="回声公寓三维游戏场景"></canvas>
+  <div id="crt" aria-hidden="true"></div>
+  <div id="vignette" aria-hidden="true"></div>
 
-  <div id="crt"></div>
-  <div id="vignette"></div>
+  <div id="title" class="screen">
+    <div class="title-shade"></div>
+    <div class="title-top"><span class="brand">残響アパート</span><span class="title-type">第一人称心理恐怖</span></div>
+    <main class="title-content">
+      <p class="title-en">ECHO APARTMENT <span class="title-edition">RECONSTRUCTED / 03</span></p>
+      <h1>回声<span>公寓</span></h1>
+      <p class="title-story">一封来信，把你带回了这里。<br>那个没被找到的孩子，还在等你。</p>
+      <p class="title-night">1998.07.14 <span>AM 02:17</span></p>
+      <div class="title-actions">
+        <button id="continue-game" class="primary hidden">继续调查 <span>↗</span></button>
+        <button id="start-game" class="primary">走进公寓 <span>↗</span></button>
+        <button id="settings-title" class="text-button">体验设置</button>
+      </div>
+    </main>
+    <div class="title-foot">
+      <p>建议佩戴耳机<span>五章调查 · 十八份记录 · 两个结局</span></p>
+      <details class="control-help"><summary>操作说明 <span>＋</span></summary><div>
+        <p><kbd>W A S D</kbd> 移动　<kbd>鼠标</kbd> 视角　<kbd>SHIFT</kbd> 奔跑</p>
+        <p><kbd>E</kbd> 调查　<kbd>F</kbd> 手电　<kbd>J</kbd> 手册　<kbd>M</kbd> 地图　<kbd>ESC</kbd> 暂停</p>
+        <p>触控板可按住拖动视角。手机使用摇杆和右侧按钮。</p>
+        <span id="touch-help" style="display:none">横屏游玩：左侧移动，空白区域滑动转向。</span>
+      </div></details>
+    </div>
+    <div class="title-scene-caption" aria-hidden="true">「哥哥，这次不要把我留在黑暗里。」</div>
+  </div>
 
   <div id="hud" class="hidden">
+    <div class="hud-top"><div><p id="chapter-label"></p><div id="objective"></div></div>
+      <div class="hud-place"><span id="location-label"></span><span id="evidence-count">0 份记录</span></div></div>
     <div id="crosshair"></div>
-    <div id="objective"></div>
-    <div id="battery"><div id="battery-fill"></div></div>
-    <div id="prompt" class="hidden"><span class="key">E</span><span id="prompt-text"></span></div>
-    <div id="subtitle"><div class="cn"></div><div class="ja"></div></div>
-    <div id="flash"></div>
+    <div class="hud-bottom"><button id="journal-button"><span>调查手册</span><kbd>J</kbd></button>
+      <span id="save-status" role="status"></span>
+      <div class="flash-info"><span>手电</span><div id="battery"><div id="battery-fill"></div></div><kbd>F</kbd></div></div>
+    <div id="prompt" class="hidden"><kbd class="key">E</kbd><span id="prompt-text"></span></div>
+    <div id="subtitle" role="status"><div class="cn"></div><div class="ja"></div></div>
+    <div id="flash" aria-hidden="true"></div>
+    <div id="hide-state" class="hidden"><div class="closet-slats"></div><p>屏住呼吸 <span>E · 离开衣柜</span></p></div>
   </div>
+  <div id="chapter-card" class="hidden" aria-live="polite"><span id="chapter-title"></span><p id="chapter-subtitle"></p></div>
 
   <div id="touch-ui" class="hidden">
     <div id="joy-zone"><div id="joy-base"></div><div id="joy-knob"></div></div>
-    <div id="btn-interact" class="tbtn">调查</div>
-    <div id="btn-flash" class="tbtn">手电</div>
-    <div id="btn-run" class="tbtn">奔跑</div>
-    <div id="btn-pause" class="tbtn">❚❚</div>
+    <button id="btn-interact" class="tbtn">调查</button><button id="btn-flash" class="tbtn">手电</button>
+    <button id="btn-run" class="tbtn">奔跑</button><button id="btn-pause" class="tbtn" aria-label="暂停">Ⅱ</button>
   </div>
-  <div id="rotate-hint" class="hidden">建议横屏游玩</div>
+  <div id="rotate-hint" class="hidden">横屏体验更佳</div>
+  <div id="scare" aria-hidden="true"><canvas id="scare-canvas"></canvas></div>
 
-  <div id="scare"><canvas id="scare-canvas"></canvas></div>
-
-  <div id="note" class="hidden">
-    <div class="paper">
-      <div class="n-item" id="note-item"></div>
-      <div class="n-title" id="note-title"></div>
-      <div class="n-cn" id="note-cn"></div>
-      <div class="n-ja" id="note-ja"></div>
-      <div class="n-hint">— 按 E 或点击关闭 —</div>
-    </div>
+  <div id="note" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="note-title">
+    <article class="paper"><button id="note-close" class="close" aria-label="合上记录">×</button>
+      <p class="paper-label" id="note-item"></p><h2 id="note-title"></h2>
+      <canvas id="note-photo" class="memory-photo hidden" aria-label="找回的三号室全家福"></canvas>
+      <div id="note-cn" class="document-content"></div><p id="note-ja" class="document-location"></p>
+      <p class="paper-hint">已收进调查手册 <kbd>E</kbd> 合上记录</p>
+    </article>
   </div>
 
-  <div id="title" class="screen">
-    <div class="noise"></div>
-    <h1>残響アパート</h1>
-    <h2>ECHO APARTMENT · 回声公寓</h2>
-    <div class="controls">
-      <b>W A S D</b> 移动 &nbsp;·&nbsp; <b>鼠标</b> 视角 &nbsp;·&nbsp; <b>SHIFT</b> 奔跑<br>
-      <b>F</b> 手电筒 &nbsp;·&nbsp; <b>E</b> 调查 / 开门 &nbsp;·&nbsp; <b>ESC</b> 暂停<br>
-      <span style="font-size:11px;opacity:.75">触控板：若指针锁定不可用，按住并拖动即可转动视角<br>
-      视角灵敏度可在暂停页调整<br>
-      <span id="touch-help" style="display:none;color:#9fd8d0">手机：左摇杆移动 · 屏幕滑动视角 · 右侧按钮交互／手电／奔跑</span><br>
-      WASD 移动 · 鼠标 视点 · SHIFT 奔跑 · F 手电筒 · E 调查 · ESC 暂停<br>
-    </div>
-    <div class="start">― 点击开始 ―<br><span style="font-size:12px;letter-spacing:0.2em;opacity:.7">CLICK</span></div>
-    <div class="warn">建议佩戴耳机 · 含恐怖演出与血腥表现</div>
+  <div id="journal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="journal-heading">
+    <section class="journal-shell">
+      <header class="panel-header"><div><span class="panel-kicker">随身记录</span><h2 id="journal-heading">调查手册</h2></div>
+        <button id="journal-close" class="close" aria-label="合上手册">×</button></header>
+      <div class="journal-goal"><span id="journal-chapter"></span><p id="journal-objective"></p>
+        <button id="journal-hint" class="text-button">需要一点提示</button><p id="journal-guidance" class="hidden"></p></div>
+      <ol id="journal-progress" aria-label="调查章节进展"></ol>
+      <div class="journal-toolbar"><nav><button class="selected" data-journal-tab="evidence">调查记录</button><button data-journal-tab="map">公寓平面图</button></nav>
+        <div id="inventory-list"></div></div>
+      <div id="journal-evidence" class="journal-evidence"><aside id="evidence-list"></aside>
+        <article><p id="evidence-location" class="document-location"></p><h3 id="evidence-title"></h3><canvas id="evidence-photo" class="memory-photo hidden" aria-label="三号室全家福"></canvas><div id="evidence-content" class="document-content"></div></article></div>
+      <div id="journal-map" class="hidden"><div class="floor-tabs"><button data-map-floor="-1">B1 地下</button><button data-map-floor="0">1F 一楼</button><button data-map-floor="1">2F 二楼</button><button data-map-floor="2">R 屋顶</button><div class="map-zoom"><button id="map-zoom-out" aria-label="缩小地图">−</button><button id="map-zoom-reset" aria-label="还原地图比例">100%</button><button id="map-zoom-in" aria-label="放大地图">＋</button></div></div>
+        <p class="map-instructions">可横向、纵向滚动查看；右侧 ＋ / − 调整比例。</p><canvas id="map-canvas" width="1000" height="500" aria-label="公寓平面图"></canvas><p id="map-caption"></p></div>
+    </section>
   </div>
 
-  <div id="pause" class="screen hidden">
-    <h2>暂停</h2>
-    <p>WASD 移动 · 鼠标 视角 · SHIFT 奔跑<br>F 手电筒 · E 调查 · ESC 暂停<br>
-    <span style="font-size:11px;opacity:.75">触控板：按住并拖动即可转动视角</span></p>
-    <p style="font-size:12px;opacity:.7">WASD 移动 · 鼠标 视点 · F 手电筒 · E 调查</p>
-    <div class="sensbox" id="sensbox">
-      <label for="sens">视角灵敏度 ／ 視点感度 <span id="sensval">14</span></label>
-      <input type="range" id="sens" min="4" max="40" step="1" value="14">
-      <div class="sens-hint">拖动滑块后点击下方「点击继续」返回游戏</div>
-    </div>
-    <div class="resume">点击继续</div>
+  <div id="puzzle" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="puzzle-title">
+    <section class="puzzle-shell"><button id="puzzle-close" class="close" aria-label="停止调查">×</button>
+      <p class="panel-kicker">调查物件</p><h2 id="puzzle-title"></h2><p id="puzzle-description"></p>
+      <div id="puzzle-controls"></div><div id="puzzle-sequence"></div>
+      <input id="puzzle-code" class="hidden" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="四位数密码">
+      <div id="puzzle-keypad" class="hidden"></div><p id="puzzle-status" role="status"></p>
+      <div class="puzzle-actions"><button id="puzzle-submit" class="primary">确认操作</button><button id="puzzle-reset" class="text-button">重置</button><button id="puzzle-hint" class="text-button">查看线索</button></div>
+    </section>
   </div>
 
-  <div id="end" class="screen hidden">
-    <h1>― 了 ―</h1>
-    <div class="end-text" id="end-text"></div>
-    <div class="end-stats" id="end-stats"></div>
-    <div class="again" id="end-again">再来一次</div>
+  <div id="recording" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="recording-title">
+    <section class="recording-shell"><p class="panel-kicker">203 放映室 / ARCHIVE 01</p>
+      <h2 id="recording-title">七月十四日的录音</h2>
+      <div class="cassette" aria-hidden="true"><div class="cassette-label">1998.07.14 — 02:17</div><div class="cassette-reels"><i></i><span></span><i></i></div><p>SIDE A <span>三号室</span></p></div>
+      <p id="recording-line" aria-live="polite"></p><div class="recording-track"><div id="recording-progress"></div></div>
+      <div class="recording-foot"><span id="recording-time"></span><button id="recording-skip" class="text-button">收起录音，查看转写</button></div>
+    </section>
   </div>
 
-  <div id="fade"></div>
-
-  <div id="error" class="screen hidden">
-    <div>
-      渲染器初始化失败。<br>
-      请使用支持 WebGL 的 PC 浏览器打开。<br><br>
-      Could not initialize the renderer. Please open this page in a WebGL-capable browser.
-    </div>
+  <div id="pause" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pause-heading">
+    <section class="settings-shell"><p class="panel-kicker">回声公寓</p><h2 id="pause-heading">暂停</h2>
+      <div class="setting-row sensbox" id="sensbox"><label for="sens">视角灵敏度 <span id="sensval">14</span></label><input type="range" id="sens" min="4" max="40" step="1" value="14"></div>
+      <div class="setting-row"><label for="setting-volume">音量 <span id="value-volume">70%</span></label><input id="setting-volume" type="range" min="0" max="100" value="70"></div>
+      <div class="setting-row"><label for="setting-brightness">亮度 <span id="value-brightness">100%</span></label><input id="setting-brightness" type="range" min="70" max="150" value="100"></div>
+      <label class="setting-check"><input id="setting-reduced" type="checkbox"><span>降低闪烁与镜头畸变<small>保留调查、谜题与追逐</small></span></label>
+      <p class="settings-controls">WASD 移动 · SHIFT 奔跑 · E 调查<br>F 手电 · J 手册 · M 地图 · ESC 暂停<br>触控板可按住拖动视角</p>
+      <button id="resume-game" class="primary">继续探索</button><button id="checkpoint-retry" class="text-button">回到当前章节节点</button>
+    </section>
   </div>
 
-  <script src="./js/bundle.js"></script>
+  <div id="ending-choice" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+    <section class="choice-shell"><p class="panel-kicker">天井的门外</p><h2 id="choice-title">你要带走什么？</h2><p id="ending-choice-hint"></p>
+      <button id="ending-remember" class="choice-button"><strong>叫出苍太的名字</strong><span>承认那一夜，带他一起离开</span></button>
+      <button id="ending-leave" class="choice-button"><strong>独自离开</strong><span>合上这扇门，让一切留在身后</span></button>
+      <button id="ending-return" class="text-button">回公寓再找找</button></section>
+  </div>
+
+  <div id="end" class="screen hidden"><p id="end-label"></p><h1 id="end-title"></h1><div id="end-text"></div><p id="end-stats"></p><button id="end-again" class="primary">再次走进公寓</button></div>
+  <div id="fade" aria-hidden="true"></div>
+  <div id="error" class="screen hidden"><h2>无法进入公寓</h2><p>渲染器初始化失败，请使用支持 WebGL 的浏览器。</p><button id="error-retry" class="primary">重新加载</button></div>
+  <script src="./js/bundle.js?v=787e7972fa"></script>
 </body>
 </html>

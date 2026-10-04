@@ -14,6 +14,8 @@ export class AudioEngine {
     this._hbTimer = null;
     this._phoneTimer = null;
     this.enabled = true;
+    this.volume = 0.7;
+    this.paused = false;
     this.droneOscs = [];
     // music director state
     this.musNext = 3;
@@ -33,7 +35,7 @@ export class AudioEngine {
       return;
     }
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.85;
+    this.master.gain.value = this.volume;
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -18;
     comp.ratio.value = 8;
@@ -43,6 +45,53 @@ export class AudioEngine {
     this._noiseBuf = this._makeNoise(2);
     this._buildReverb();
     this._buildAmbient();
+    this._buildEnvironment();
+  }
+
+  _buildEnvironment() {
+    this.environment = [];
+    const sources = [
+      { x:18.3, y:-1.6, z:27.9, frequency:72, gain:.06, range:12, type:'sine' },
+      { x:22.6, y:-1.0, z:16.3, frequency:145, gain:.035, range:8, type:'triangle' },
+      { x:-25.4, y:3.7, z:42.4, frequency:760, gain:.018, range:6, type:'noise' },
+      { x:0, y:7, z:78, frequency:280, gain:.04, range:17, type:'noise' },
+    ];
+    const c = this.ctx;
+    for (const spec of sources) {
+      const source = spec.type === 'noise' ? c.createBufferSource() : c.createOscillator();
+      if (spec.type === 'noise') { source.buffer = this._noiseBuf; source.loop = true; }
+      else { source.type = spec.type; source.frequency.value = spec.frequency; }
+      const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = spec.frequency;
+      const gain = c.createGain(); gain.gain.value = 0;
+      const pan = c.createPanner(); pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse';
+      pan.refDistance = 1.7; pan.maxDistance = spec.range; pan.rolloffFactor = 1.4;
+      pan.setPosition(spec.x, spec.y, spec.z);
+      source.connect(filter); filter.connect(gain); gain.connect(pan); this._out(pan, .2); source.start();
+      this.environment.push({ ...spec, source, filter, volume:gain });
+    }
+  }
+
+  updateEnvironment(position, forward, blocked) {
+    if (!this.ctx || !this.environment) return;
+    const c = this.ctx, l = c.listener, t = c.currentTime;
+    if (l.positionX) {
+      for (const [prop, value] of [['positionX',position.x],['positionY',position.y],['positionZ',position.z],
+        ['forwardX',forward.x],['forwardY',forward.y],['forwardZ',forward.z],['upX',0],['upY',1],['upZ',0]])
+        l[prop].setTargetAtTime(value,t,.04);
+    } else { l.setPosition(position.x,position.y,position.z); l.setOrientation(forward.x,forward.y,forward.z,0,1,0); }
+    for (const source of this.environment) {
+      const distance = Math.hypot(position.x-source.x,position.y-source.y,position.z-source.z);
+      const occluded = distance < source.range && blocked(source);
+      source.volume.gain.setTargetAtTime(distance < source.range ? source.gain * (occluded ? .12 : 1) : 0, t, .25);
+      source.filter.frequency.setTargetAtTime(source.frequency * (occluded ? .5 : 1), t, .25);
+    }
+    if (this.revGain) this.revGain.gain.setTargetAtTime(position.y < -.8 ? .68 : position.y > 4.8 ? .18 : .42, t, .6);
+  }
+
+  cameraShutter(pan = 0) {
+    this._noise({dur:.035,type:'highpass',freq:1400,gain:.11,pan});
+    this._noise({dur:.08,type:'bandpass',freq:440,gain:.09,pan,delay:.05});
+    this._osc({f0:180,f1:55,dur:.12,gain:.07,attack:.002,pan,delay:.04});
   }
 
   _makeNoise(seconds) {
@@ -521,9 +570,25 @@ export class AudioEngine {
 
   duck() { // brief silence for scares
     if (this.master) {
-      this.master.gain.setTargetAtTime(0.15, this.ctx.currentTime, 0.02);
-      setTimeout(() => { if (this.master) this.master.gain.setTargetAtTime(0.85, this.ctx.currentTime, 0.2); }, 350);
+      this.master.gain.setTargetAtTime(this.volume * 0.18, this.ctx.currentTime, 0.02);
+      setTimeout(() => this.setVolume(this.volume), 350);
     }
+  }
+
+  setVolume(value) {
+    this.volume = clamp(value, 0, 1);
+    if (this.master) this.master.gain.setTargetAtTime(this.paused ? this.volume * 0.12 : this.volume,
+      this.ctx.currentTime, 0.05);
+  }
+
+  setPaused(value) {
+    this.paused = value;
+    this.setVolume(this.volume);
+  }
+
+  puzzleTone(index) {
+    this._osc({ type: 'sine', f0: [0, 261.63, 329.63, 392, 523.25][index],
+      dur: 0.9, gain: 0.1, attack: 0.005, wet: 0.45 });
   }
 
   switchClick() {

@@ -15,6 +15,7 @@ function makeCtx() {
     },
     getImageData() { return { width: 1, height: 1, data: new Uint8ClampedArray(4) }; },
     putImageData() {},
+    createRadialGradient() { return { addColorStop() {} }; },
     measureText() { return { width: 10 }; },
   };
   return new Proxy(ctx, {
@@ -96,7 +97,7 @@ const R = 0.3, H = 1.75;
 let clips = 0, tests = 0;
 const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.707, 0.707], [-0.707, 0.707], [0.707, -0.707], [-0.707, -0.707]];
 for (const c of colliders) {
-  if (c.y1 > 2.6) continue;
+
   // Only full-height blockers (walls, door slabs, tall partitions) can cause
   // player wall-clipping. Low furniture/counters merely brush the legs and
   // overlapping prop colliders are expected, not wall-clips.
@@ -107,7 +108,7 @@ for (const c of colliders) {
   for (const [ux, uz] of dirs) {
     const sx = (c.x0 + c.x1) / 2 + ux * ((c.x1 - c.x0) / 2 + R + 0.35);
     const sz = (c.z0 + c.z1) / 2 + uz * ((c.z1 - c.z0) / 2 + R + 0.35);
-    if (Math.abs(sx) > 20 || Math.abs(sz) > 66 || sx < -18.5 || sx > 9.5) continue;
+    if (sx < -18.5 || sx > 32 || sz < -10 || sz > 84) continue;
     // start standing on the local floor (the raised segment tops at 0.16);
     // starting at y=0 inside that slab is a state the player can never reach
     let floorTop = -10;
@@ -115,13 +116,17 @@ for (const c of colliders) {
       // the player's CENTER must be supported by the floor; a partial AABB
       // overlap at the edge of a slab is not a place a player can stand.
       if (s.x0 < sx && s.x1 > sx && s.z0 < sz && s.z1 > sz &&
-          s.y1 <= 0.3 && s.y1 > floorTop) floorTop = s.y1;
+          s.y1 <= c.y0 + 0.3 && s.y1 > floorTop) floorTop = s.y1;
     }
     if (floorTop < -5) continue; // inside an enclosed cavity (e.g. stairwell void) - a player can never stand there
     const char = { x0: sx - R, x1: sx + R, y0: floorTop, y1: floorTop + H, z0: sz - R, z1: sz + R };
+    // 只从角色确实能站立的空位置开始；墙角、家具内部不是有效出生点。
+    const embedded = colliders.some(b => b.x0 < char.x1 && b.x1 > char.x0 &&
+      b.z0 < char.z1 && b.z1 > char.z0 && b.y1 > char.y0 + 0.35 && b.y0 < char.y1 - 0.08);
+    if (embedded) continue;
     for (let i = 0; i < 90; i++) {
       moveWithCollisions(char, -ux * 3.9 * 0.017, -0.28, -uz * 3.9 * 0.017, colliders, 0.35);
-      if (char.y0 < -0.5) break; // fell out of the world - report below as clip
+      if (char.y0 < floorTop - 0.5) break; // fell out of the world - report below as clip
       tests++;
       for (const b of colliders) {
         // only colliders tall enough to actually BLOCK count as clips; the
@@ -154,3 +159,5 @@ for (const n of level.monsterNodes) {
   if (!support) { nodeBad++; console.log(`  node without floor: (${n.x},${n.y},${n.z})`); }
 }
 console.log(`--- monster nodes without floor: ${nodeBad}`);
+
+if (clips || nodeBad) process.exitCode = 1;

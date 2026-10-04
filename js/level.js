@@ -1,8 +1,10 @@
 // level.js — the abandoned apartment: geometry, colliders, doors, lights,
 // props, pickups and trigger zones. All coordinates in meters.
 // North = -x, South = +x, East = +z.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
+import { beveledBoxGeometry, detailMaterials, doorDetails } from './models.js';
 import { createTextures } from './textures.js';
+import { buildCampaignWorld } from './campaign-world.js';
 import {
   makeBoxGeo, stdMat, basicMat, boxAABB, rand, mulberry32, clamp,
 } from './util.js';
@@ -19,6 +21,7 @@ export class Level {
     this.tex = createTextures();
     this.rng = mulberry32(20260814);
 
+    this.stairs = [];
     this.colliders = [];       // static AABBs
     this.doors = [];          // dynamic doors
     this.interactables = [];  // {mesh, label, action, dist, once}
@@ -27,12 +30,13 @@ export class Level {
     this.candles = [];
     this.tvLight = null;
     this.windowLights = [];
+    this.ceilings = [];
     this.notePickups = [];
     this.props = {};
     this.monsterNodes = [];
     this.ghostSpawns = [];
     this.ofudas = [];
-    this.playerStart = new THREE.Vector3(0, 0, -1.35);
+    this.playerStart = new THREE.Vector3(0, 0, -6.4);
 
     this.materials = this._makeMaterials();
     this._build();
@@ -40,6 +44,7 @@ export class Level {
     this._buildProps();
     this._buildDecals();
     this._buildLights();
+    buildCampaignWorld(this);
     this._buildNodes();
     this._initPerf();
   }
@@ -76,6 +81,7 @@ export class Level {
     keepTree(P.doll?.mesh);
     keepTree(P.mobile);
     keepTree(P.furin);
+    keepTree(P.campaignDynamic);
     for (const r of P.ropes || []) dynamic.add(r);
     for (const o of this.ofudas) dynamic.add(o);
     for (const b of P.batteries || []) dynamic.add(b.halo);
@@ -173,14 +179,18 @@ export class Level {
 
   // ---------------------------------------------------------------- builders
   box(x, z, y, w, d, h, mat, opts = {}) {
-    const geo = makeBoxGeo(w, h, d, opts.geo || {});
+    const geo = opts.geo?.bevel ? beveledBoxGeometry(w,h,d) : makeBoxGeo(w, h, d, opts.geo || {});
     const mesh = new THREE.Mesh(geo, opts.material || mat);
     mesh.position.set(x, y + h / 2, z);
     mesh.castShadow = opts.cast ?? true;
     mesh.receiveShadow = opts.receive ?? true;
     this.scene.add(mesh);
     // boxAABB takes the CENTER; y here is the bottom of the box
-    if (opts.collide !== false) this.colliders.push(boxAABB(x, y + h / 2, z, w, h, d));
+    if (opts.collide !== false) {
+      const collider = boxAABB(x, y + h / 2, z, w, h, d);
+      this.colliders.push(collider);
+      mesh.userData.collider = collider;
+    }
     return mesh;
   }
 
@@ -227,11 +237,13 @@ export class Level {
   }
 
   ceil(x, z, w, d, yBottom, mat) {
-    return this.box(x, z, yBottom, w, d, 0.12, mat, {
+    const mesh = this.box(x, z, yBottom, w, d, 0.12, mat, {
       geo: { uv: [w / 3, d / 3], ao: 'ceil', aoStrength: 0.95 },
       cast: false,
       collide: false,
     });
+    this.ceilings.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2,y:yBottom});
+    return mesh;
   }
 
   // room shell: floor + ceiling (+ walls via flags)
@@ -315,8 +327,8 @@ export class Level {
     this.wallX(-1.7, 24, 32, 0, CORR_H, M.plaster, []);
     this.wallX(-1.9, 32, 58, 0, CORR_H, M.plaster, [[48.6, 49.8]]);
     // south wall: altar door (3.0-4.2), child door (10.0-11.2)
-    this.wallX(1.7, 0, 32, 0, CORR_H, M.plaster, [[3.0, 4.2], [10.0, 11.2]]);
-    this.wallX(1.9, 32, 58, 0, CORR_H, M.plaster, []);
+    this.wallX(1.7, 0, 32, 0, CORR_H, M.plaster, [[3.0, 4.2], [10.0, 11.2], [19.8, 21.2]]);
+    this.wallX(1.9, 32, 58, 0, CORR_H, M.plaster, [[43, 45]]);
     // jog walls closing the width transitions
     this.wallZ(20, -1.85, -1.7, 0, CORR_H, M.plaster);
     this.wallZ(24, -1.85, -1.7, 0, CORR_H, M.plaster);
@@ -324,69 +336,31 @@ export class Level {
     this.wallZ(32, 1.7, 1.9, 0, CORR_H, M.plaster);
     this.wallZ(58, -1.9, -1.7, 0, CORR_H, M.plaster);
     this.wallZ(58, 1.7, 1.9, 0, CORR_H, M.plaster);
-    // stairwell end wall (below landing)
-    this.wallZ(61, -1.7, 1.7, 0, 2.8, M.concrete);
-
-    // floors: entry (concrete), normal + raised anomaly segment
-    this.floor(0, -1, 3.4, 2, 0, M.concrete);             // z -2..0 (widened)
-    this.floor(0, 12, 3.6, 24, 0, M.woodFloor);          // z 0..24 (widened to 3.2m inner)
-    this.floor(0, 28, 3.4, 8, 0.16, M.woodFloor);        // z 24..32 raised (widened)
-    this.box(0, 24, 0, 3.4, 0.24, 0.16, M.plaster, { geo: { ao: 'floor' } }); // step lip
-    this.floor(0, 45, 3.8, 26, 0, M.woodFloor);          // z 32..58 (widened to 3.6m inner)
-    // ceilings (main corridor): the west stairwell opens upward as a dark shaft
-    this.ceil(0, 12.8, 3.6, 22.4, 2.7, M.ceiling);           // z 1.6..24 (widened)
-    this.ceil(0.45, 0.8, 2.5, 1.6, 2.7, M.ceiling);          // passage z 0..1.6 (widened)
-    this.ceil(0, 28, 3.4, 8, 2.7, M.ceiling);                // lower ceiling over raised floor (widened)
+    // 连续的公寓走廊；楼梯口位于走廊尽头的独立楼梯间。
+    this.wallX(-1.7, 58, 61.7, 0, CORR_H, M.plaster);
+    this.wallX(1.7, 58, 61.7, 0, CORR_H, M.plaster);
+    this.floor(0, -1, 3.4, 2, 0, M.concrete);
+    this.floor(0, 12, 3.6, 24, 0, M.woodFloor);
+    this.floor(0, 28, 3.4, 8, 0, M.woodFloor);
+    this.floor(0, 45, 3.8, 26, 0, M.woodFloor);
+    this.floor(0, 59.85, 3.4, 3.7, 0, M.concrete);
+    this.ceil(0, 12, 3.6, 24, 2.7, M.ceiling);
+    this.ceil(0, 28, 3.4, 8, 2.7, M.ceiling);
     this.ceil(0, 45, 3.8, 26, 2.7, M.ceiling);
+    this.ceil(0, 59.85, 3.4, 3.7, 2.7, M.ceiling);
 
-    // ===== east stairs (z 58..61, rise 2.8) =====
-    // 1.8 wide (x -0.9..0.9), matching the UPPER corridor's inner width: the
-    // upper walls (±1.0) overhung the old 2.4-wide stairs, so a climber hugging
-    // the rail clipped their head into the wall above the stairwell.
-    for (let i = 0; i < 10; i++) {
-      this.box(0, 58 + i * 0.3 + 0.15, 0, 1.8, 0.3, 0.28 * (i + 1), M.concrete, { geo: { ao: 'none' } });
-    }
-    this.wallX(-1.7, 58, 61, 0, 2.8, M.concrete);
-    this.wallX(1.7, 58, 61, 0, 2.8, M.concrete);
-
-    // ===== upper floor (y 2.8) =====
-    // floor has two stair openings: east (z 58..61, x -1.0..0.5 - the stairs
-    // must NOT sit under the slab, or the climber's head clips into it) and
-    // west notch (z 1.6..1.9, x -1.0..-0.3) so the stairwells have headroom.
-    // The right strip (x 0.5..1.0) is bridged by a catwalk above the stairwell.
     const UY = 2.8, UH = 2.4;
-    this.floor(0.35, 29.8, 1.3, 56.4, UY, M.woodFloor);      // z 1.6..58, x -0.3..1.0
-    this.floor(-0.65, 29.95, 0.7, 56.1, UY, M.woodFloor);    // z 1.9..58, x -1.0..-0.3
-    this.floor(0, 62.1, 2.0, 2.2, UY, M.woodFloor);          // landing z 61..63.2
-    this.floor(0.75, 59.5, 0.5, 3.0, UY, M.woodFloor);       // catwalk across the stairwell opening (z 58..61)
-    this.ceil(0, 32.4, 2.0, 61.6, UY + UH, M.ceiling);
-    this.wallX(-1.0, 1.6, 63.2, UY, UH, M.plaster);
-    this.wallX(1.0, 1.6, 63.2, UY, UH, M.plaster, [[30.0, 31.2]]); // exit door gap
-    // west-end jogs closing the stair well (stairs are 2.4 wide, upper is 2.0)
-    this.wallZ(1.6, -1.2, -1.0, UY, UH, M.concrete);
-    this.wallZ(1.6, 1.0, 1.2, UY, UH, M.concrete);
-    this.box(-1.1, 62.1, UY, 0.2, 2.2, UH, M.concrete);  // landing strips
-    this.box(1.1, 62.1, UY, 0.2, 2.2, UH, M.concrete);
-    this.box(-0.75, 0.8, 5.2, 0.9, 1.6, 0.12, M.concrete, { geo: { ao: 'ceil' } }); // west shaft cap
+    this.floor(0, 30.85, 2, 61.7, UY, M.woodFloor);
+    this.ceil(0, 31, 2, 62, UY + UH, M.ceiling);
+    this.wallX(-1, 0, 61.7, UY, UH, M.plaster, [[20, 21.4], [40, 41.4], [55, 56.6]]);
+    this.wallX(1, 0, 61.7, UY, UH, M.plaster, [[30, 31.2], [46, 47.4]]);
+    this.wallZ(0, -1, 1, UY, UH, M.plaster);
 
-    // ===== upper floor rooms (study + bedroom, no partition walls) =====
-    // The upper floor is an open space with room props. No partition walls
-    // are added because they would block the player's path (the player's
-    // collision radius touches the wall at x=-0.3). Rooms are defined by
-    // props alone: a study area (z 2..8) and a bedroom area (z 10..18).
-
-    // ===== west stairs (side staircase along the north wall, z 0..1.6) =====
-    // corridor squeezes along the south side (anomaly: the hallway dips past the stairs)
-    for (let i = 0; i < 10; i++) {
-      this.box(-0.75, 0.16 * i + 0.08, 0, 0.9, 0.16, 0.28 * (i + 1), M.concrete, { geo: { ao: 'none' } });
-    }
-    // entry walls + ceiling (the stairwell side stays open as a shaft)
+    // 原来的玄关成为大厅通往住户区的门厅，没有地洞或陡梯。
     this.wallX(-1.7, -2, 0, 0, CORR_H, M.concrete);
     this.wallX(1.7, -2, 0, 0, CORR_H, M.concrete);
-    this.ceil(0.45, -1, 2.5, 2, 2.7, M.ceiling);
-    // entry end wall (front door side)
+    this.ceil(0, -1, 3.4, 2, 2.7, M.ceiling);
     this.wallZ(-2, -1.7, 1.7, 0, CORR_H, M.plaster, [[-0.58, 0.58]]);
-    // shoe shelf nook
     this.box(-0.95, -1.5, 0, 0.3, 0.7, 1.0, M.darkWood, { geo: { ao: 'wall' } });
 
     // ===== rooms: north wing =====
@@ -664,18 +638,19 @@ export class Level {
     this._baseboard(-1.775, 49.8, 58, 0);
     this._baseboard(1.585, 0, 3.0, 0);
     this._baseboard(1.585, 4.2, 10.0, 0);
-    this._baseboard(1.585, 11.2, 24, 0);
-    // raised floor (z 24..32) top at y=0.16: south baseboard sits ON it
-    this._baseboard(1.585, 24, 32, 0.16);
+    this._baseboard(1.585, 11.2, 24, 0, [[19.8, 21.2]]);
+    // 南侧踢脚线沿连续地面布置
+    this._baseboard(1.585, 24, 32, 0);
     this._baseboard(1.775, 32, 38, 0); // south wide wall (x=1.9, inner face 1.8)
-    this._baseboard(1.775, 38, 46, 0);
+    this._baseboard(1.775, 38, 46, 0, [[43, 45]]);
     this._baseboard(1.775, 46, 54, 0);
     this._baseboard(1.775, 54, 58, 0);
     // lower wainscot in the widened long corridor: breaks up the big flat wall
     // planes and adds the "old Japanese apartment" horizontal depth cue.
     this._wainscot(-1.775, 32, 48.6);
     this._wainscot(-1.775, 49.8, 58);
-    this._wainscot(1.775, 32, 58);
+    this._wainscot(1.775, 32, 43);
+    this._wainscot(1.775, 45, 58);
     // ceiling cornice: a thin shadow line where the wall meets the ceiling,
     // gives the long corridor a more built, less "cardboard box" silhouette.
     for (const cx of [-1.775, 1.775]) {
@@ -705,9 +680,9 @@ export class Level {
     this._baseboardX(8.615, 1.3, 8.4, 0);
     this._baseboard(8.285, 8.5, 15.5, 0);
     // upper floor (skip the exit door gap on the east wall; walls at ±1.0, inner faces ±0.9)
-    this._baseboard(-0.885, 1.6, 63.2, 2.8);
+    this._baseboard(-0.885, 1.6, 63.2, 2.8, [[20, 21.4], [40, 41.4], [55, 56.6]]);
     this._baseboard(0.885, 1.6, 30.0, 2.8);
-    this._baseboard(0.885, 31.2, 63.2, 2.8);
+    this._baseboard(0.885, 31.2, 63.2, 2.8, [[46, 47.4]]);
     // ceiling beams, lower corridor (between the fixtures)
     for (const z of [5.65, 10.05, 14.6, 19.2, 23.8, 28.4, 33.0, 37.6, 42.2, 46.8, 51.4]) {
       this.box(0, z, 2.56, z >= 33 ? 3.8 : 3.4, 0.16, 0.14, M.darkWood, {
@@ -730,36 +705,7 @@ export class Level {
     // old radiators - modeled with ribs so they read as objects, not white slabs
     this._radiator(1.7, 16.8);   // south wall, main corridor (widened)
     this._radiator(-1.9, 40.8);  // north wall, long corridor (widened)
-    // east stair handrails + posts. The stairs rise 2.8m over z 58.15..60.85
-    // (slope ~0.804 rad). The old rails sat at y=1.06 with rotation +0.76:
-    // wrong sign (descending) and far too low - mid-run the steps are 1.5m+
-    // high, so the rails were buried inside the staircase.
-    {
-      const railY = (z) => 2.44 + (z - 59.5) * (2.8 / 2.7);
-      for (const hx of [-0.885, 0.885]) {
-        const rail = this.box(hx, 59.5, 2.44 - 0.0125, 0.03, 3.92, 0.025, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
-        rail.rotation.x = -Math.atan2(2.8, 2.7);
-        for (let k = 0; k < 5; k++) {
-          const pz = 58.45 + k * 0.6;
-          const py0 = Math.max(0.28, (pz - 58.15) * (2.8 / 2.7));
-          const py1 = railY(pz) - 0.02;
-          this.box(hx, pz, py0, 0.024, 0.024, py1 - py0, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
-        }
-      }
-    }
-    // west stair handrail on its open (south) side - the stairs hug the north
-    // wall, so only the corridor side needs a rail. Rise 2.8 over run 1.6.
-    {
-      const wx = -0.31; // on the stairs' open edge (x -1.2..-0.3), not floating past it
-      const railY = (z) => 2.44 + (z - 0.8) * 1.75;
-      const rail = this.box(wx, 0.8, 2.44 - 0.0125, 0.03, 3.24, 0.025, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
-      rail.rotation.x = -Math.atan2(2.8, 1.6);
-      for (const pz of [0.32, 0.64, 0.96, 1.28]) {
-        const py0 = Math.max(0.28, pz * 1.75);
-        const py1 = railY(pz) - 0.02;
-        this.box(wx, pz, py0, 0.024, 0.024, py1 - py0, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
-      }
-    }
+
   }
 
   // ---------------------------------------------------------------- doors
@@ -792,13 +738,13 @@ export class Level {
     const px = along === 'z' ? x + offset : x;
     const pz = along === 'z' ? z : z + offset;
     pivot.position.set(px, y, pz);
-    const slabGeo = makeBoxGeo(width, height, 0.06, { uv: [width / 1.4, height / 1.4], jitter: 0.004 });
+    const slabGeo = beveledBoxGeometry(width,height,.06);
     // BoxGeometry makes the slab wide in X and thin in Z. That is correct for
     // along='x' doors, but along='z' doors live in walls that run along Z, so
     // their slab must be thin in X and span the opening in Z — otherwise the
     // closed door sticks out of the frame at a right angle (the "cross" bug).
     if (along === 'z') slabGeo.rotateY(Math.PI / 2);
-    const slab = new THREE.Mesh(slabGeo, mat);
+    const slab = new THREE.Mesh(slabGeo, mat === M.woodDoor ? detailMaterials(this).wood : mat);
     slab.castShadow = true;
     slab.receiveShadow = true;
     if (along === 'z') slab.position.set(0, height / 2, width / 2);
@@ -807,7 +753,7 @@ export class Level {
     this.scene.add(pivot);
 
     const knob = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 5, 4),
+      new THREE.SphereGeometry(0.035, 16, 10),
       stdMat({ color: 0x8a7a3a, roughness: 0.55, metalness: 0.3 })
     );
     // The slab is CENTERED on the pivot, spanning [0, width] from the hinge.
@@ -818,6 +764,7 @@ export class Level {
     if (along === 'z') knob.position.set(-0.06, height * 0.54, width / 2 - 0.09);
     else knob.position.set(width / 2 - 0.09, height * 0.54, -0.06);
     slab.add(knob);
+    doorDetails(this,slab,width,height,along);
 
     const door = {
       pivot, slab, knob, along, type, width, height, dir,
@@ -918,10 +865,10 @@ export class Level {
     // brick backing: must fully cover the door opening (z 48.02..49.18) so a
     // player can't clip through the uncovered west part and get stuck in the wall.
     this.box(-2.25, 48.6, 0, 0.2, 1.4, 2.7, M.brick, { geo: { ao: 'wall' } }); // brick backing (solid)
-    // entry door (locked forever)
+    // 大厅与住户区之间的正常内门
     this.makeDoor({
       x: -0.58, z: -2, along: 'x', width: 1.16, dir: 1, offset: 0.11, label: '玄关的门',
-      locked: true, lockedMsg: '打不开……外面一片漆黑。',
+      locked: false,
     });
     // exit door (upper floor, locked until finale) + balcony platform beyond
     this.exitDoor = this.makeDoor({
@@ -1466,7 +1413,7 @@ export class Level {
     const sign = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.28, 0.06), M.exitSign);
     sign.position.set(0, 2.42, 57.4);
     this.scene.add(sign);
-    // stopped wall clock (3:33) - lit material so it doesn't glow white in the dark
+    // stopped wall clock (02:17) - lit material so it doesn't glow white in the dark
     // mounted on the south wall inner face (wall at x=1.7, inner face ~1.6)
     const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.03, 12),
       stdMat({ map: t.clock, roughness: 0.6 }));
@@ -1484,9 +1431,8 @@ export class Level {
     // face +x into the corridor, so the face parameter is 'e', not 'n' -
     // 'n' left the plane edge-on to the player)
     this._window(-0.9, 20, 3.55, 'e');
-    // raised floor segment (z 24..32) has its top at y=0.16: the decal must
-    // sit on 0.172, not 0.012 (it was buried under the floor and invisible)
-    this.decalFloor(0, 30.6, 0.8, 1.2, t.blood, 0.4, 0.172);
+    // 地面贴花贴合重建后的连续走廊
+    this.decalFloor(0, 30.6, 0.8, 1.2, t.blood, 0.4, 0.012);
     this.decalWall(1.575, 29.4, 3.2, 0.3, 0.6, t.handprint, 'w', 0.2);
     this.decalWall(1.575, 31.5, 3.4, 0.4, 0.5, t.blood, 'w', 0.1);
     // green exit glow above the upper door (dim: a 2.6 light at 0.4m from the
@@ -1494,18 +1440,7 @@ export class Level {
     const exitGlow = new THREE.PointLight(0x3fa05a, 0.9, 4, 1.9);
     exitGlow.position.set(0.6, 3.3, 30.6);
     this.scene.add(exitGlow);
-    // hanging ropes in the west stairwell shaft
     this.props.ropes = [];
-    for (const [rx, rz, rl] of [[-0.6, 0.5, 1.6], [-0.95, 1.15, 1.1], [-0.45, 0.15, 1.3]]) {
-      const g = new THREE.Group();
-      g.position.set(rx, 5.2, rz);
-      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, rl, 4),
-        stdMat({ color: 0x3a322a, roughness: 0.9 }));
-      rope.position.y = -rl / 2;
-      g.add(rope);
-      this.scene.add(g);
-      this.props.ropes.push(g);
-    }
     // the eyes wall (revealed behind the dead door) — the brick backing spans
     // x -1.92..-1.78 (corridor-facing side x=-1.78), z 48.6..49.8. The decal
     // must face +x INTO the corridor ('e'), centered on the brick — the old
@@ -1516,7 +1451,7 @@ export class Level {
     // vertical blood drag on the south wall (inner face x=1.6)
     this.decalWall(1.615, 28.0, 0.75, 0.32, 1.6, t.blood, 'w', 0.12);
     // cardboard boxes (moved outward to match widened corridor)
-    for (const [bx, bz, br] of [[-1.5, 43.2, 0.3], [1.6, 43.6, -0.4], [-1.5, 44.0, 0.7]]) {
+    for (const [bx, bz, br] of [[-1.5, 43.2, 0.3], [1.6, 41.7, -0.4], [-1.5, 44.0, 0.7]]) {
       const b = this.box(bx, bz, 0, 0.55, 0.5, 0.5, stdMat({ color: 0x6e5a38, roughness: 0.9 }), { geo: { ao: 'wall' } });
       b.rotation.y = br;
     }
@@ -1540,52 +1475,8 @@ export class Level {
     this._battery(-5.05, 13.05);
     this._battery(-0.55, 33.6);
 
-    // ===== upper floor room props (study + bedroom) =====
-    // --- Study room (z 2..8, x -0.3..1.0, y=2.8) ---
-    // Desk against the south wall (x=1.0 inner face ~0.9)
-    this.box(0.85, 5.0, UY, 0.08, 1.2, 0.6, M.darkWood, { geo: { ao: 'wall', uv: [1.2, 0.6] } }); // desk top
-    this.box(0.7, 4.5, UY, 0.4, 0.08, 0.5, M.darkWood, { geo: { ao: 'none' } }); // desk leg
-    this.box(0.7, 5.5, UY, 0.4, 0.08, 0.5, M.darkWood, { geo: { ao: 'none' } }); // desk leg
-    // Chair
-    this.box(0.2, 5.0, UY, 0.35, 0.35, 0.04, M.darkWood, { geo: { ao: 'none' } }); // seat
-    this.box(0.2, 5.0, UY + 0.22, 0.04, 0.04, 0.22, M.darkWood, { geo: { ao: 'none' } }); // seat post
-    this.box(0.2, 4.7, UY + 0.44, 0.35, 0.04, 0.22, M.darkWood, { geo: { ao: 'none' } }); // backrest
-    // Note on the desk (journal page)
-    const unote1 = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.22, 0.28),
-      stdMat({ map: t.journal, side: THREE.DoubleSide, roughness: 0.92, emissive: 0xffffff, emissiveIntensity: 0.4 })
-    );
-    unote1.position.set(0.85, UY + 0.61, 5.0);
-    unote1.rotation.x = -Math.PI / 2;
-    this.scene.add(unote1);
-    const unoteGlow1 = new THREE.PointLight(0xffb060, 0.4, 2.5, 2.0);
-    unoteGlow1.position.set(0.85, UY + 0.75, 5.0);
-    this.scene.add(unoteGlow1);
-    this.notePickups.push({ mesh: unote1, id: 3 });
-    this.regInteractable(unote1, '楼上的手记', 3.5, () => this.handlers.onNote?.(3));
-    // Bookshelf against the east wall (z=8.0)
-    this.box(0.5, 7.5, UY, 0.6, 0.08, 1.4, M.darkWood, { geo: { ao: 'wall', uv: [0.6, 1.4] } }); // shelf
-    this.box(0.5, 7.5, UY + 0.7, 0.6, 0.08, 1.4, M.darkWood, { geo: { ao: 'wall', uv: [0.6, 1.4] } }); // shelf
-    for (let i = 0; i < 4; i++) {
-      this.box(0.3, 7.2, UY + 0.1 + i * 0.45, 0.08, 0.2, 0.3,
-        stdMat({ color: [0x4a3a3a, 0x3a4a3a, 0x3a3a4a, 0x5a4a3a][i], roughness: 0.9 }),
-        { geo: { ao: 'none' }, collide: false, cast: false });
-    }
+    // 二楼家具与调查物件位于独立住户房间，由 campaign-world.js 构建。
 
-    // --- Bedroom (z 10..18, x -0.3..1.0, y=2.8) ---
-    // Futon (bed) against the south wall
-    this.box(0.6, 14.0, UY, 0.9, 1.8, 0.18, M.pale, { geo: { ao: 'wall', uv: [1, 2] } }); // mattress
-    this.box(0.6, 13.2, UY + 0.18, 0.85, 0.3, 0.06, M.quilt, { geo: { ao: 'none' } }); // pillow
-    this.box(0.6, 14.5, UY + 0.12, 0.85, 1.0, 0.04, M.quilt, { geo: { ao: 'none', jitter: 0.01 }, collide: false, cast: false }); // blanket
-    // Nightstand beside the bed
-    this.box(0.85, 12.5, UY, 0.35, 0.4, 0.45, M.darkWood, { geo: { ao: 'wall' } });
-    // Battery on the nightstand
-    this._battery(0.85, 12.5, UY + 0.46);
-    // Small lamp on the nightstand
-    this.box(0.85, 12.5, UY + 0.5, 0.08, 0.08, 0.12, M.darkMetal, { geo: { ao: 'none' }, collide: false, cast: false });
-    const lampBulb = new THREE.PointLight(0xffd080, 0.3, 2.0, 2.0);
-    lampBulb.position.set(0.85, UY + 0.65, 12.5);
-    this.scene.add(lampBulb);
   }
 
   /* 一节手电电池：横放在地上的小圆柱，淡色环带在黑暗里隐约可见
@@ -1661,11 +1552,12 @@ export class Level {
   _window(x, z, y, face, opts = {}) {
     const M = this.materials;
     const dark = !!opts.dark;
+    const ww = opts.w ?? 0.8, wh = opts.h ?? 0.8;
     // 碎/被封死的黑窗：无月光、无雨痕，只剩一块更暗的破玻璃
     const paneMat = dark
       ? stdMat({ color: 0x070a0e, roughness: 0.35, metalness: 0.1 })
       : M.moonWin;
-    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), paneMat);
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(ww, wh), paneMat);
     const lx = face === 'e' ? 0.02 : face === 'w' ? -0.02 : 0;
     const lz = face === 'n' ? -0.02 : face === 's' ? 0.02 : 0;
     win.position.set(x + lx, y, z + lz);
@@ -1680,7 +1572,7 @@ export class Level {
         map: this.tex.rainStreaks, transparent: true, opacity: 0.55,
         depthWrite: false, side: THREE.DoubleSide,
       });
-      const rain = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), rainMat);
+      const rain = new THREE.Mesh(new THREE.PlaneGeometry(ww, wh), rainMat);
       const ox = face === 'e' ? 0.005 : face === 'w' ? -0.005 : 0;
       const oz = face === 'n' ? -0.005 : face === 's' ? 0.005 : 0;
       rain.position.set(win.position.x + ox, win.position.y, win.position.z + oz);
@@ -1702,8 +1594,8 @@ export class Level {
       // place the moonlight source outside the building:
       // north=-x, south=+x, east=+z, west=-z
       light.position.set(
-        x + (face === 'n' ? -0.6 : face === 's' ? 0.6 : 0), y,
-        z + (face === 'e' ? 0.6 : face === 'w' ? -0.6 : 0),
+        x + (face === 'e' ? 0.6 : face === 'w' ? -0.6 : 0), y,
+        z + (face === 'n' ? 0.6 : face === 's' ? -0.6 : 0),
       );
       this.scene.add(light);
       this.windowLights.push(light);
@@ -1712,14 +1604,14 @@ export class Level {
       const fx = x + (face === 'e' ? 0.03 : -0.03);
       // window frame: lintel, stool, two jambs + a cross mullion (proud of the
       // wall, giving the pane real depth instead of a flat decal)
-      this.box(fx, z, y + 0.37, 0.05, 0.94, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(fx, z, y - 0.37, 0.05, 0.94, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(fx, z - 0.42, y, 0.05, 0.05, 0.79, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(fx, z + 0.42, y, 0.05, 0.05, 0.79, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(fx, z, y, 0.04, 0.05, 0.79, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(fx, z, y - 0.185, 0.05, 0.79, 0.04, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      for (const dz of [-0.26, 0, 0.26]) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.75, 0.02), barMat);
+      this.box(fx, z, y + wh / 2 - 0.03, 0.05, ww + 0.14, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z, y - wh / 2 + 0.03, 0.05, ww + 0.14, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z - ww / 2 - 0.02, y, 0.05, 0.05, wh - 0.01, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z + ww / 2 + 0.02, y, 0.05, 0.05, wh - 0.01, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z, y, 0.04, 0.05, wh - 0.01, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(fx, z, y - wh * 0.23, 0.05, ww - 0.01, 0.04, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      for (const dz of [-ww * 0.325, 0, ww * 0.325]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, wh - 0.05, 0.02), barMat);
         bar.position.set(x + (face === 'e' ? 0.045 : -0.045), y, z + dz);
         this.scene.add(bar);
       }
@@ -1732,12 +1624,12 @@ export class Level {
       const fz = z + (face === 'n' ? -0.03 : 0.03);
       this.box(x, fz - 0.37, y, 0.94, 0.05, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
       this.box(x, fz + 0.37, y, 0.94, 0.05, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(x - 0.42, fz, y, 0.05, 0.05, 0.79, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(x + 0.42, fz, y, 0.05, 0.05, 0.79, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(x - 0.42, fz, y, 0.05, 0.05, wh - 0.01, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      this.box(x + 0.42, fz, y, 0.05, 0.05, wh - 0.01, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
       this.box(x, fz, y, 0.79, 0.04, 0.05, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      this.box(x, fz, y - 0.185, 0.79, 0.05, 0.04, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
-      for (const dx of [-0.26, 0, 0.26]) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.75, 0.02), barMat);
+      this.box(x, fz, y - wh * 0.23, 0.79, 0.05, 0.04, frameMat, { geo: { ao: 'none' }, collide: false, cast: false });
+      for (const dx of [-ww * 0.325, 0, ww * 0.325]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, wh - 0.05, 0.02), barMat);
         bar.position.set(x + dx + (face === 'n' ? 0.015 : -0.015), y, z + (face === 'n' ? -0.045 : 0.045));
         this.scene.add(bar);
       }
@@ -1806,7 +1698,7 @@ export class Level {
     // bedroom wall blood (west side of shared wall, x = -8.5)
     this.decalWall(-8.515, 13.6, 1.1, 0.5, 0.4, t.blood, 'e', 0.2);
     // corridor stains
-    this.decalFloor(0.9, 30.6, 0.5, 0.7, t.blood, 0.6, 0.172); // on the raised floor (top 0.16)
+    this.decalFloor(0.9, 30.6, 0.5, 0.7, t.blood, 0.6, 0.012); // on the continuous floor
     this.decalWall(-1.585, 24.4, 0.5, 0.3, 0.25, t.blood, 'e', 0.1);
   }
 
@@ -1924,16 +1816,12 @@ export class Level {
 
   // ---------------------------------------------------------------- nodes / triggers
   _buildNodes() {
-    // corridor nodes: z 24..32 is the raised floor segment (top y=0.16) -
-    // nodes there must carry that height or the monster teleports 0.16m INTO
-    // the slab. z 59.5 sat inside the east staircase (buried 1.5m deep); the
-    // pre-stairs corridor z 57.5 is the correct stalking spot.
+    // 节点位于连续走廊的地面；折返梯节点由 stairs.js 注册。
     const cz = [-1, 3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 57.5];
     for (const z of cz) {
-      this.monsterNodes.push({ x: 0, z, y: z >= 24 && z < 32 ? 0.16 : 0 });
+      this.monsterNodes.push({ x: 0, z, y: 0 });
     }
-    // upper nodes: z 60.5 at x=0 floats over the stairwell opening - the
-    // catwalk strip (x 0.75) is the only floor there
+    // 二楼节点位于正常住户走廊。
     const uz = [4, 12, 20, 28, 36, 44, 52, 62.5];
     for (const z of uz) this.monsterNodes.push({ x: 0, z, y: 2.8 });
     this.monsterNodes.push({ x: 0.75, z: 60.5, y: 2.8 });
@@ -1953,17 +1841,18 @@ export class Level {
     const zone = (x0, z0, x1, z1, id, y0 = -10, y1 = 10) => {
       this.triggers.push({ aabb: { x0, y0, z0, x1, y1, z1 }, id, fired: false });
     };
-    zone(-8.4, 0, -1.3, 7.5, 'kitchen');
-    zone(-8.4, 7.5, -1.3, 15.5, 'living');
-    zone(-13.8, 7.5, -8.4, 15.5, 'bedroom');
-    zone(-17.6, 14.8, -13.8, 21, 'bathroom');
-    zone(-16.4, 13.8, -14.6, 14.8, 'passage');
-    zone(1.3, 0, 8.4, 8.5, 'altar');
-    zone(1.3, 8.5, 8.4, 15.5, 'child');
+    zone(-8.4, 0, -1.3, 7.5, 'kitchen', -0.3, 2);
+    zone(-8.4, 7.5, -1.3, 15.5, 'living', -0.3, 2);
+    zone(-13.8, 7.5, -8.4, 15.5, 'bedroom', -0.3, 2);
+    zone(-17.6, 14.8, -13.8, 21, 'bathroom', -0.3, 2);
+    zone(-16.4, 13.8, -14.6, 14.8, 'passage', -0.3, 2);
+    zone(1.3, 0, 8.4, 8.5, 'altar', -0.3, 2);
+    zone(1.3, 8.5, 8.4, 15.5, 'child', -0.3, 2);
     zone(-2, 10, 2, 58, 'upper', 2.3, 8);
     zone(-1.7, 24, 1.7, 30, 'corridorMid', 0, 2.2);
     zone(-1.7, 57.5, 1.7, 61, 'stairsEast', 0, 2.2);
-    zone(0.95, 29.2, 2.4, 31.8, 'exitVoid', 2.3, 8);
+    // 出口持续检查：锁着时路过不能永久消耗结局触发器。
+    this.exitBounds = { x0: 2.4, x1: 10.3, z0: 28.7, z1: 32.8, y0: 2.4, y1: 4 };
   }
 
   checkTriggers(p) {
@@ -1974,6 +1863,14 @@ export class Level {
         t.fired = true;
         this.handlers[`zone_${t.id}`]?.(t);
       }
+    }
+    const exit = this.exitBounds;
+    const insideExit = p.x >= exit.x0 && p.x <= exit.x1 &&
+      p.z >= exit.z0 && p.z <= exit.z1 && p.y >= exit.y0 && p.y <= exit.y1;
+    if (!insideExit) this.exitVisit = false;
+    if (this.exitDoor.open && insideExit && !this.exitVisit) {
+      this.exitVisit = true;
+      this.handlers.zone_exitVoid?.();
     }
   }
 
@@ -1987,7 +1884,7 @@ export class Level {
     return best;
   }
 
-  update(dt, time, playerPos = null, viewDir = null) {
+  update(dt, time, playerPos = null, viewDir = null, reduced = false) {
     this.updateDoors(dt);
     // 灯光预算节流重算（0.12s）：排序 51 盏灯的成本可忽略，切换只改 uniforms
     this._budgetT -= dt;
@@ -2036,7 +1933,7 @@ export class Level {
       const cdx = playerPos.x - clk.mesh.position.x;
       const cdz = playerPos.z - clk.mesh.position.z;
       const near = (cdx * cdx + cdz * cdz) < 25;
-      if (clk.state === 'normal' && near && clk.timer <= 0 && Math.random() < 0.01) {
+      if (clk.state === 'normal' && clk.mysterySolved && near && clk.timer <= 0 && Math.random() < 0.01) {
         clk.state = 'back';
         clk.timer = rand(2.5, 5);
         clk.mesh.material.map = this.tex.clockBack;
@@ -2068,6 +1965,7 @@ export class Level {
       // the next one (mostly on, occasional stutters - a dying fluorescent).
       let v = 1;
       if (f.kill || f.userOff) v = 0;
+      else if (reduced && f.mode !== 'dead') v = f.mode === 'bad' ? 0.55 : 1;
       else if (f.mode === 'steady') v = 1;
       else if (f.mode === 'flicker') {
         f.flickT -= dt;

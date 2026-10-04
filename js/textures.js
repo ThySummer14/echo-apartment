@@ -1,5 +1,5 @@
 // textures.js — fully procedural low-res textures (PS1-era feel), generated on canvas.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
 import { mulberry32 } from './util.js';
 
 function canvas(w, h) {
@@ -9,14 +9,14 @@ function canvas(w, h) {
 }
 
 // deterministic value-noise over ImageData
-function fillNoise(img, rng, { r = 255, g = 255, b = 255, amp = 18, scale = 1, base = null }) {
+export function fillNoise(img, rng, { r = 255, g = 255, b = 255, amp = 18, scale = 1, base = null }) {
   const d = img.data;
   const w = img.width, h = img.height;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const n = (rng() - 0.5) * 2 * amp * scale;
-      const br = base ? (base[y * w * 4 + x] || d[i]) : 0;
+      const br = base ? base[i] : 0;
       const rr = base ? br : r;
       d[i] = Math.max(0, Math.min(255, rr + n));
       d[i + 1] = Math.max(0, Math.min(255, (base ? base[i + 1] : g) + n));
@@ -802,9 +802,9 @@ function clockTex(back = false) {
     ctx.lineTo(64 + Math.sin(a) * 54, 64 - Math.cos(a) * 54);
     ctx.stroke();
   }
-  // 停在 3:33；back 变体 = 两根针都从原位逆时针退回一截（时间倒走了）
-  const hb = Math.PI * 1.07 + (back ? -0.55 : 0);
-  const mb = Math.PI * 0.12 + (back ? -1.9 : 0);
+  // 停在剧情中的 02:17；back 变体 = 两根针都从原位逆时针退回一截（时间倒走了）
+  const hb = (2 + 17 / 60) / 12 * Math.PI * 2 + (back ? -0.55 : 0);
+  const mb = 17 / 60 * Math.PI * 2 + (back ? -1.9 : 0);
   ctx.lineWidth = 5;
   ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.sin(hb) * 28, 64 - Math.cos(hb) * 28); ctx.stroke();
   ctx.lineWidth = 3;

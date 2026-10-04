@@ -1,6 +1,6 @@
 // util.js — shared helpers: seeded RNG, geometry builders with PS1 quirks,
 // AABB collision, vertex-snap (vertex wobble) material modifier.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
 
 // ---------------- RNG ----------------
 export function mulberry32(seed) {
@@ -143,6 +143,7 @@ export function moveWithCollisions(char, dx, dy, dz, colliders, stepUp = 0.35, o
       break;
     }
   }
+
 
   // Y: support.
   // fpOverlap: the surface lies under any part of the character's footprint.
@@ -312,14 +313,17 @@ export function makeBoxGeo(w, h, d, opts = {}) {
 // ---------------- materials ----------------
 export function stdMat(opts = {}) {
   const m = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
+    color: opts.color ?? 0xffffff,
     roughness: opts.roughness ?? 0.9,
     metalness: opts.metalness ?? 0.0,
     flatShading: opts.flat ?? false,
   });
   if (opts.map) m.map = opts.map;
   if (opts.vertexColors) m.vertexColors = true;
-  if (opts.emissive) { m.emissive = opts.emissive; m.emissiveIntensity = opts.emissiveIntensity ?? 1; }
+  if (opts.emissive !== undefined) {
+    m.emissive.set(opts.emissive);
+    m.emissiveIntensity = opts.emissiveIntensity ?? 1;
+  }
   if (opts.transparent) { m.transparent = true; m.opacity = opts.opacity ?? 1; }
   if (opts.depthWrite === false) m.depthWrite = false;
   if (opts.side) m.side = opts.side;
