@@ -28,6 +28,7 @@ const recovered = () => {
 const radioLinked = (campaign) => {
   campaign.collectItem('relayFuse');
   assert.equal(campaign.perform('generator', [1, 0, 2]).ok, true);
+  campaign.collectDocument(27);
   assert.equal(campaign.perform('radio', '1407').ok, true);
   return campaign;
 };
@@ -236,6 +237,7 @@ test('旧区供电、呼叫和排水必须依次推进，错误操作不消耗�
   assert.equal(campaign.collectItem('relayFuse'), false);
   assert.equal(campaign.perform('radio', '0147').ok, false);
   assert.equal(campaign.chapter, 4);
+  campaign.collectDocument(27);
   assert.equal(campaign.perform('radio', '1407').ok, true);
   assert.equal(campaign.documents.has('23'), true);
   assert.equal(campaign.chapter, 5);
@@ -257,4 +259,17 @@ test('3.0 未排水存档接入旧区，终章存档保留进度，4.0 不能伪
   assert.equal(new Campaign(forged).flags.released, undefined);
   const current = radioLinked(recovered());
   assert.deepEqual(new Campaign(current.snapshot()).snapshot(), current.snapshot());
+});
+
+test('社区记录解释救援取消并接入电台；旧存档保留已完成前置',()=>{
+ const c=recovered();c.collectItem('relayFuse');c.perform('generator',[1,0,2]);
+ assert.match(c.objective,/卫生站/);
+ assert.equal(c.perform('radio','1407').ok,false);
+ const old=c.snapshot();old.revision=4;
+ assert.equal(new Campaign(old).documents.has('27'),true);
+ assert.equal(new Campaign(c.snapshot()).documents.has('27'),false);
+ c.collectDocument(27);
+ assert.match(c.objective,/电台/);
+ assert.equal(c.perform('radio','1407').ok,true);
+ assert.equal(new Campaign(c.snapshot()).flags.relay,true);
 });

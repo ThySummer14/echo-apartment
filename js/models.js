@@ -120,3 +120,37 @@ export function doorDetails(level,slab,width,height,along) {
   }
   for(const yy of [-height*.34,0,height*.34])add(new THREE.CylinderGeometry(.014,.014,.12,12),M.iron,-width/2+.016,yy,0);
 }
+
+// Freestanding wardrobe: separate carcass, recessed doors, plinth, ventilation
+// slots, and hardware. Keep a single conservative collider for hiding gameplay;
+// decoration never enlarges that envelope or introduces snagging micro-colliders.
+export function wardrobeModel(level,x,z,y) {
+  const M=detailMaterials(level),group=new THREE.Group();
+  group.position.set(x,y,z);level.scene.add(group);
+  const add=(w,h,d,mat,px,py,pz)=>{
+    const m=new THREE.Mesh(beveledBoxGeometry(w,h,d),mat);
+    m.position.set(px,py,pz);group.add(m);return m;
+  };
+  add(1.18,.10,.57,M.wood,0,.10,0);
+  add(1.25,.075,.62,M.wood,0,2.01,0);
+  for(const side of [-1,1]) {
+    add(.075,1.85,.58,M.wood,side*.586,1.04,0);
+    add(.1,.10,.12,M.wood,side*.50,.05,-.19);
+    add(.1,.10,.12,M.wood,side*.50,.05,.19);
+    const cx=side*.282;
+    // Door frames around an inset panel. A narrow central reveal reads as depth.
+    for(const dx of [-.245,.245])add(.058,1.79,.045,M.wood,cx+dx,1.08,-.301);
+    for(const yy of [.21,1.95])add(.55,.05,.045,M.wood,cx,yy,-.301);
+    add(.455,1.60,.025,M.paint,cx,1.08,-.288);
+    for(let row=0;row<5;row++)add(.34,.013,.005,M.rubber,cx,1.56+row*.047,-.303);
+    add(.052,.17,.02,M.brass,side*.061,1.05,-.319);
+    const handle=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,.12,10),M.brass);
+    handle.position.set(side*.061,1.05,-.34);group.add(handle);
+    for(const yy of [.38,1.76])add(.015,.085,.016,M.brass,side*.558,yy,-.328);
+  }
+  add(1.1,1.82,.032,M.wood,0,1.06,.286);
+  const collider={x0:x-.625,x1:x+.625,y0:y,y1:y+2.05,z0:z-.36,z1:z+.31};
+  level.colliders.push(collider);group.userData.collider=collider;
+  group.userData.model='wardrobe';
+  return group;
+}

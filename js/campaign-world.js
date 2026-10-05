@@ -1,12 +1,14 @@
 import * as THREE from '../vendor/three.module.js';
 import { stdMat, basicMat, boxAABB, mulberry32 } from './util.js';
 import { buildSwitchbackStair } from './stairs.js';
-import { detailMaterials, fixtureDetails, finishStairwell } from './models.js';
+import { detailMaterials, fixtureDetails, finishStairwell, wardrobeModel } from './models.js';
+import { COMMUNITY_AREAS, buildCommunity } from './community.js';
 import { WEST_AREAS, buildWestWing } from './west-wing.js';
 import { buildBasementAnnex, ANNEX_AREAS } from './basement-annex.js';
 
 // 平面图与位置提示共用真实关卡坐标。
 export const WORLD_AREAS = [
+  ...COMMUNITY_AREAS,
   ...ANNEX_AREAS,
   ...WEST_AREAS,
   { name: '入口大厅', floor: 0, bounds: [-5, -9, 5, -2] },
@@ -179,10 +181,7 @@ export function buildCampaignWorld(level) {
     }
   };
   const closet = (x, z, y) => {
-    const body = box(x, z, y, 1.25, 0.62, 2.05, M.darkWood, true);
-    box(x, z - 0.32, y + 0.03, 1.15, 0.035, 1.96, grey);
-    box(x, z - 0.35, y + 0.08, 0.018, 0.02, 1.86, M.black);
-    for (const dx of [-0.08, 0.08]) cylinder(x + dx, y + 1.06, z - 0.38, 0.016, 0.14, brass);
+    const body = wardrobeModel(level,x,z,y);
     level.regInteractable(body, '躲进衣柜', 2.3, () => level.handlers.onHide?.(body));
   };
   const roomTrim = (x0, x1, z0, z1, y, doorX, gap) => {
@@ -199,8 +198,8 @@ export function buildCampaignWorld(level) {
     gaps: { n: [[-0.8, 0.8]] } });
   level.wallZ(-2, -5, -1.7, 0, 2.7, M.concrete);
   level.wallZ(-2, 1.7, 5, 0, 2.7, M.concrete);
-  level.makeDoor({ x: -0.8, z: -9, along: 'x', width: 1.6, dir: 1, mat: grey,
-    label: '公寓外门', locked: true, lockedMsg: '外门的锁舌已经锈死。拆除通知说，夜间只能走二楼天井出口。' });
+  world.doors.community = level.makeDoor({ x: -0.8, z: -9, along: 'x', width: 1.6, dir: 1, mat: grey,
+    label: '公寓外门', locked: true, lockedMsg: '社区门禁失去供电。先恢复地下备用电源。' });
   desk(-3.55, -6.55, 0, 2.0);
   chair(-3.5, -5.45, 0);
   recordDocument('invitation', -3.5, -6.55, 0.803, '一封没有署名的信');
@@ -596,6 +595,7 @@ export function buildCampaignWorld(level) {
   closet(3, 14.7, 0);
   world.musicBox = musicBox;
   buildWestWing(level, { box, mesh, cylinder, sign, lamp, desk, chair, shelf, closet, recordDocument, pickup });
+  buildCommunity(level, { box, mesh, cylinder, sign, lamp, desk, chair, shelf, closet, recordDocument, pickup });
   buildBasementAnnex(level, { box, mesh, cylinder, sign, lamp, desk, chair, shelf, closet, recordDocument, pickup });
 
   // 不再用满地血迹承担全部叙事；墙面的潮痕和住户留下的标记更有辨识度。
@@ -618,6 +618,10 @@ export function syncCampaignWorld(level, campaign) {
   const world = level.campaign;
   if (level.props.clock) level.props.clock.mysterySolved = !!campaign.flags.cabinet;
   world.valves[2].visible = !!campaign.flags.released;
+  world.doors.community.locked = !campaign.flags.power;
+  world.communityBeacon.light.intensity = campaign.flags.relay ? world.communityBeacon.base : 0;
+  world.communityBeacon.bulb.material.color.setHex(campaign.flags.relay ? 0x9fcca4 : 0x28332f);
+  world.communityPlaque.material.color.setHex(campaign.flags.relay ? 0x55775e : 0x28332f);
   world.doors.service.locked = !campaign.flags.invitation;
   world.doors.office.locked = !campaign.flags.power;
   world.doors.resident.locked = !campaign.flags.power;

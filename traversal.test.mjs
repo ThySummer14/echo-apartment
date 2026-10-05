@@ -174,3 +174,42 @@ test('向上运动不能穿过顶板',()=>{
  moveWithCollisions(c,0,3,0,[ceiling],.35);
  assert.ok(c.y1<=ceiling.y0+.001,JSON.stringify(c));
 });
+
+test('社区两条街区回路从大厅连续步行可达并返回',()=>{
+ const outer=level.campaign.doors.community;outer.locked=false;level.forceOpen(outer);
+ for(let i=0;i<200;i++)level.updateDoors(.016);
+ const cs=[...level.colliders,...level.doors.map(d=>d.collider).filter(Boolean)];
+ const c=body(0,0,-6),guard=new TraversalGuard();guard.reset(point(c));
+ const route=[[0,-12],[-6,-12],[-6,-21],[-12,-21],[-18,-23],[-18,-35],[-18,-40],[-18,-35],[-12,-35],[-12,-33],[-6,-33],[-6,-41],
+  [6,-41],[6,-33],[12,-33],[13,-33],[13,-35],[18,-35],[18,-40],[18,-35],[13,-35],[13,-21],[18,-22.5],[13,-21],[6,-21],[6,-12],[0,-12],[0,-6]];
+ let frames=0;
+ for(const [x,z] of route) {
+  let reached=false;
+  for(let i=0;i<900;i++) {
+   const p=point(c),distance=Math.hypot(x-p.x,z-p.z);
+   if(distance<.08){reached=true;break;}
+   const step=Math.min(.065,distance);
+   const moved=moveWithCollisions(c,(x-p.x)/distance*step,-.03,(z-p.z)/distance*step,cs,.35);
+   assert.equal(guard.update(c,moved.grounded,cs,1/60),null,'unexpected recovery');
+   assert.ok(Math.abs(c.y0)<.001,'unintended climb/fall '+JSON.stringify(point(c)));
+   frames++;
+  }
+  assert.ok(reached,'blocked on way to '+JSON.stringify([x,z])+' at '+JSON.stringify(point(c)));
+ }
+ console.log('  Community continuous movement frames:',frames);
+});
+
+test('重建衣柜的全部部件位于单一碰撞包络内，没有装饰碰撞碎片',()=>{
+ const wardrobes=[];level.scene.updateMatrixWorld(true);
+ level.scene.traverse(o=>{if(o.userData.model==='wardrobe')wardrobes.push(o);});
+ assert.ok(wardrobes.length>=4);
+ for(const wardrobe of wardrobes) {
+  const b=new THREE.Box3().setFromObject(wardrobe),c=wardrobe.userData.collider;
+  for(const axis of ['x','y','z']) {
+   assert.ok(b.min[axis]>=c[axis+'0']-.015,axis+' min '+b.min[axis]);
+   assert.ok(b.max[axis]<=c[axis+'1']+.015,axis+' max '+b.max[axis]);
+  }
+  assert.ok(wardrobe.children.length>25,'carcass, inset doors, hardware and ventilation are separate geometry');
+  assert.equal(level.colliders.filter(x=>x===c).length,1);
+ }
+});

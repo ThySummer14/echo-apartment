@@ -242,7 +242,7 @@ export class Level {
     const mesh = this.box(x, z, yBottom, w, d, 0.12, mat, {
       geo: { uv: [w / 3, d / 3], ao: 'ceil', aoStrength: 0.95 },
       cast: false,
-      collide: false,
+      collide: true,
     });
     this.ceilings.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2,y:yBottom});
     return mesh;

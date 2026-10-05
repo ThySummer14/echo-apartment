@@ -33,7 +33,15 @@ export class AtmosphereDirector {
     if (g.campaign.flags.generator && g.level.campaign.generatorRotor)
       g.level.campaign.generatorRotor.rotation.x += dt * 5;
     if (this.areaTime < 1.2 || this.cooldown > 0 || g.monster.state === 'chase') return;
-    if (area === '地下旧区连廊') {
+    if (area === '回声社区中庭' && g.campaign.flags.relay) {
+      this.once('community-return', () => { g.audio.duck(); g._sub('雨棚下的救援灯亮了。迟到的回应已经传进地下。还有一个人，在等你开门。', '', 6); g._setFear(.3); });
+    } else if (area === '回声社区中庭') {
+      this.once('community-arrival', () => { g.audio.knock(3); g._sub('公寓外也是同一场雨。杂货店的灯还亮着，卫生站却没有出车。', '', 5); });
+    } else if (area === '雨夜杂货店') {
+      this.once('shop-arrival', () => { g.audio.switchClick(); g._sub('柜台上留着四份订单。电话的听筒，没有放好。', '', 4); });
+    } else if (area === '街区卫生站') {
+      this.once('clinic-arrival', () => { g.audio.breath(-.5,2); g._sub('两张空床。接线员曾经写下了他的声音。', '', 4); });
+    } else if (area === '地下旧区连廊') {
       this.once('annex-arrival', () => { g.audio.hammer(.5); g._sub('另一侧的门不是出口。这里藏着那一夜没有发出的求救。', '', 5); g._setFear(.45); });
     } else if (area === '地下值班站') {
       this.once('watch-arrival', () => { g.audio.knock(3); g._sub('交班日志最后一栏，写着「管道水锤」。', '', 4); });

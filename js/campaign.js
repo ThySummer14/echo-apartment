@@ -102,6 +102,19 @@ export const DOCUMENTS = {
     cn: '泵房门锁：由内部不能打开。\n建议立即撤换，并在电台侧增加远程解锁继电器。\n\n验收栏一直空着。\n\n摄影师偷偷接好了继电器，却没有给备用电台通电。\n\n［最后的批注：需要先启动柴油机，再接通救援频道。机械手轮仍在一楼东翼维修室。］',
   },
 
+  25: {
+    title: '未取走的面包订单', location: '社区 · 雨夜杂货店', item: '社区记录 01',
+    cn: '七月十四日，三号室。\n\n四份牛奶面包。两份不要葡萄干。\n\n母亲付过钱，说雨停以后让哥哥来取。\n七月十五日，店主把数量改成三份，又划掉了。\n\n柜台下面还压着那枚零钱。没有人来要求退款。',
+  },
+  26: {
+    title: '公用电话通话底单', location: '社区 · 杂货店电话台', item: '社区记录 02',
+    cn: '02:24，拨号至社区卫生站。\n通话时间：十一秒。\n\n接线员的备注：一个孩子一直问，水会不会涨过门上的窗。有人在后面喊他别添乱，电话就断了。\n\n不是没有人听到。他已经走到这里，试着找过别人。\n卫生站的接线记录应当还在。',
+  },
+  27: {
+    title: '救援接线记录', location: '社区 · 街区卫生站', item: '社区记录 03',
+    cn: '02:25，准备派人前往回声公寓。\n02:28，管理处回电：误报，已确认楼内无人被困。\n02:31，取消出车。\n\n值班护士在下面补了一句：我没有听见孩子亲口说安全。\n\n救援台要求重新呼叫时同时报出地点和姓名。频道 14.07，面板输入 1407。接通前不要松开通话键。\n\n这一次，把你知道的说完。',
+  },
+
 };
 
 export const CHAPTERS = [
@@ -154,7 +167,8 @@ export class Campaign {
     if (!this.flags.photo) return '到二楼西翼暗房，洗出三号室的全家福';
     if (!this.flags.generator && !this.items.has('relayFuse')) return '用相纸夹层的钥匙进入地下旧区，在搬迁档案库找输出熔断器';
     if (!this.flags.generator) return '到地下旧区发电机房，恢复电台备用输出';
-    if (!this.flags.relay) return '到地下旧区最里面的电台室，接通救援频道';
+    if (!this.flags.relay && !this.documents.has('27')) return '从大厅外门进入社区，到卫生站查明救援为何取消';
+    if (!this.flags.relay) return '带着卫生站的记录回地下电台，重新发出救援呼叫';
     if (!this.flags.released && !this.items.has('valveHandle')) return '到一楼东翼维修室取回排水阀手轮';
     if (!this.flags.released) return '返回地下排水间，装回手轮并转开三只阀门';
     return '带着苍太的名字，前往二楼天井防火门';
@@ -170,6 +184,7 @@ export class Campaign {
     if (!this.flags.memory) return '画上标出了第 3、第 1、第 4 根线。按这个顺序弹奏四个音。';
     if (!this.flags.photo) return '西翼入口在二楼靠近楼梯间的左侧。204 桌上有底片，北面的纪念室有显影液。暗房红灯旁记录着冲洗顺序。';
     if (!this.flags.generator) return '旧区入口在地下配电间最里面。输出熔断器在档案库绿色维修盒，柴油机按预热、供油、输出启动。';
+    if (!this.flags.relay && !this.documents.has('27')) return '恢复供电后，大厅外门可以打开。穿过中庭，右侧卫生站前台保存着救援接线记录。';
     if (!this.flags.relay) return '电台在旧区尽头。频道表标明 14.07 MHz，去掉小数点，输入 1407。';
     if (!this.flags.released && !this.items.has('valveHandle')) return '东翼入口在一楼长走廊右侧。手轮留在管理员维修室的工具台上。';
     if (!this.flags.released) return '带手轮到地下排水间。录音记录着操作次序：泄压、排水、回水。';
@@ -248,6 +263,7 @@ export class Campaign {
     } else if (action === 'radio') {
       if (!this.flags.generator) return fail('电台没有电。先恢复旧区柴油机输出。');
       if (this.flags.relay) return fail('救援频道已经接通。转写收在调查手册中。');
+      if (!this.documents.has('27')) return fail('呼叫缺少事故核实记录。先到大厅外的社区卫生站，查明那一夜为何取消救援。');
       if (String(input) !== '1407') return fail('只有杂音。频道表标明了四位调谐码。');
       this.flags.relay = true; this.collectDocument(23);
       this.checkpoint = { x: 18, y: -2.8, z: 62.5 };
@@ -277,7 +293,7 @@ export class Campaign {
       version: 2, flags: { ...this.flags }, items: [...this.items],
       documents: [...this.documents], checkpoint: { ...this.checkpoint },
       elapsed: Math.max(0, this.elapsed), ending: this.ending ?? null,
-      revision: 4, events: [...this.events],
+      revision: 5, events: [...this.events],
     };
   }
 
@@ -313,6 +329,8 @@ export class Campaign {
     if (this.flags.memory) this.items.add('westKey');
     else for (const item of ['westKey', 'film', 'developer']) this.items.delete(item);
     if (this.flags.photo) { this.items.delete('film'); this.items.delete('developer'); }
+    // Old investigations keep their radio progress; only new unfinished calls need the district record.
+    if ((saved.revision ?? 2) < 5 && this.flags.generator) this.documents.add('27');
     this.events = new Set(Array.isArray(saved.events) ? saved.events.filter(e => typeof e === 'string' && e.length < 48).slice(0, 32) : []);
     if (!this.flags.invitation) this.items.delete('serviceKey');
     if (!this.flags.cabinet) this.items.delete('archiveKey');
@@ -324,7 +342,7 @@ export class Campaign {
     if (Number.isFinite(saved.elapsed)) this.elapsed = Math.max(0, saved.elapsed);
     const point = saved.checkpoint;
     if (point && [point.x, point.y, point.z].every(Number.isFinite) &&
-      point.x >= -30 && point.x <= 44 && point.z >= -9 && point.z <= 83 &&
+      point.x >= -30 && point.x <= 44 && point.z >= -45 && point.z <= 83 &&
       [-2.8, 0, 2.8, 5.6].includes(point.y)) this.checkpoint = { ...point };
     if (['remember', 'leave'].includes(saved.ending) && this.flags.ended) this.ending = saved.ending;
   }
