@@ -154,3 +154,23 @@ test('纸拉门受阻停止关闭，不能将玩家推入墙内',()=>{
  assert.equal(door.open,true);assert.equal(door.slideTarget,-door.slideOffset);
  const b=door.collider;assert.ok(!(b.x0<p.x+.3&&b.x1>p.x-.3&&b.z0<p.z+.3&&b.z1>p.z-.3));
 });
+
+test('低顶下不能自动踏上矮物并把头挤进天花板',()=>{
+ const floor={x0:-5,x1:5,z0:-5,z1:5,y0:-.2,y1:0};
+ const step={x0:.6,x1:2,z0:-1,z1:1,y0:0,y1:.3};
+ const ceiling={x0:-5,x1:5,z0:-5,z1:5,y0:1.9,y1:2.1};
+ const c=body(0,0,0);
+ for(let i=0;i<20;i++)moveWithCollisions(c,.1,-.04,0,[floor,step,ceiling],.35);
+ assert.ok(c.x1<=step.x0+.001,JSON.stringify(c));
+ assert.equal(c.y0,0);
+ assert.ok(c.y1<=ceiling.y0);
+ const clear=body(0,0,0);
+ for(let i=0;i<20;i++)moveWithCollisions(clear,.1,-.04,0,[floor,step],.35);
+ assert.ok(clear.y0>=.3,'headroom clearance must not prevent ordinary stairs');
+});
+
+test('向上运动不能穿过顶板',()=>{
+ const c=body(0,0,0),ceiling={x0:-5,x1:5,z0:-5,z1:5,y0:1.9,y1:2.1};
+ moveWithCollisions(c,0,3,0,[ceiling],.35);
+ assert.ok(c.y1<=ceiling.y0+.001,JSON.stringify(c));
+});

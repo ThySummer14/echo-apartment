@@ -53,10 +53,15 @@ function collisionStep(char, dx, dy, dz, colliders, stepUp, opts) {
   let blockedXZ = false;
   let prevX0 = char.x0, prevX1 = char.x1, prevZ0 = char.z0, prevZ1 = char.z1;
 
-  // does box b block horizontal movement at feet height (with step tolerance)?
+  // A low obstacle is a stair only if the entire body fits above it.
+  // Otherwise treat its leading face as a wall instead of lifting the camera
+  // through a ceiling/underside of a shelf.
+  const canStepOnto = (b) => !colliders.some(o => o !== b &&
+    o.x0 < char.x1 && o.x1 > char.x0 && o.z0 < char.z1 && o.z1 > char.z0 &&
+    o.y0 < b.y1 + (bodyTop - foot) && o.y1 > Math.max(b.y1, bodyTop));
   const blocks = (b) =>
     b.x0 < char.x1 && b.x1 > char.x0 && b.z0 < char.z1 && b.z1 > char.z0 &&
-    b.y1 > foot + stepUp && b.y0 < bodyTop - 0.08;
+    (b.y1 > foot + stepUp || (b.y1 > foot + .1 && !canStepOnto(b))) && b.y0 < bodyTop - 0.08;
 
   // Snapshot the blockers the character was already embedded in at the START
   // of this move. The post-move un-embed must only consider these: a wall
@@ -177,7 +182,7 @@ function collisionStep(char, dx, dy, dz, colliders, stepUp, opts) {
     let step = -Infinity;
     for (const b of colliders) {
       if (movingIn(b) && fpOverlap(b) && b.y1 <= foot + stepUp + 0.001 &&
-          b.y1 > foot + 0.1 && b.y1 > step) step = b.y1;
+          b.y1 > foot + 0.1 && b.y1 > step && canStepOnto(b)) step = b.y1;
     }
     if (step > -1e9) {
       char.y1 += step - foot;
@@ -206,7 +211,13 @@ function collisionStep(char, dx, dy, dz, colliders, stepUp, opts) {
     char.y0 += dy; char.y1 += dy;
     return { grounded: false, blocked: false };
   }
-  char.y0 += dy; char.y1 += dy;
+  if (dy > 0) {
+    let rise = dy;
+    for (const b of colliders) if (fpOverlap(b) && b.y0 >= bodyTop - .001 && b.y0 < bodyTop + rise)
+      rise = Math.max(0, b.y0 - bodyTop);
+    char.y0 += rise; char.y1 += rise;
+    return { grounded: false, blocked: blockedXZ || rise < dy };
+  }
   let support = -Infinity;
   for (const b of colliders) {
     if (fpOverlap(b) && b.y1 <= foot + 0.101 && b.y1 > support) support = b.y1;
