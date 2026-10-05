@@ -231,9 +231,11 @@ export class Level {
   }
 
   floor(x, z, w, d, yTop, mat, uv) {
-    return this.box(x, z, yTop - 0.12, w, d, 0.12, mat, {
+    const mesh = this.box(x, z, yTop - 0.12, w, d, 0.12, mat, {
       geo: { uv: uv || [w / 3, d / 3], ao: 'floor', aoStrength: 0.9 },
     });
+    mesh.userData.collider.walkable = true;
+    return mesh;
   }
 
   ceil(x, z, w, d, yBottom, mat) {
@@ -367,7 +369,7 @@ export class Level {
     // kitchen  x -8.4..-1.3, z 0..7.5
     this.room(-8.4, -1.3, 0, 7.5, { n: true, w: true, s: true, e: false, wallMat: M.wallpaper });
     // living   x -8.4..-1.3, z 7.5..15.5
-    this.room(-8.4, -1.3, 7.5, 15.5, { n: true, w: true, s: false, e: false, wallMat: M.wallpaper, gaps: { w: [[12.2, 13.4]] } });
+    this.room(-8.4, -1.3, 7.5, 15.5, { n: true, w: true, s: true, e: false, wallMat: M.wallpaper, gaps: { w: [[12.2, 13.4]] } });
     // bedroom  x -13.8..-8.4, z 7.5..15.5 (wardrobe gap on west wall)
     this.room(-13.8, -8.4, 7.5, 15.5, { n: true, w: true, s: true, e: false, wallMat: M.plaster, gaps: { w: [[13.8, 14.8]] } });
     // wardrobe passage x -16.4..-14.6, z 13.8..14.8 (low ceiling 2.2)
@@ -382,7 +384,7 @@ export class Level {
     // altar    x 1.3..8.4, z 0..8.5 (tatami)
     this.room(1.3, 8.4, 0, 8.5, { n: true, w: false, s: true, e: true, floorMat: M.tatami, floorUV: [9.5, 4.7], wallMat: M.woodWall });
     // child    x 1.3..8.4, z 8.5..15.5
-    this.room(1.3, 8.4, 8.5, 15.5, { n: true, w: false, s: false, e: true, wallMat: M.wallpaper });
+    this.room(1.3, 8.4, 8.5, 15.5, { n: true, w: false, s: true, e: true, wallMat: M.wallpaper });
 
     this._buildTrim();
     this._buildDetailProps();
@@ -744,6 +746,7 @@ export class Level {
     // their slab must be thin in X and span the opening in Z — otherwise the
     // closed door sticks out of the frame at a right angle (the "cross" bug).
     if (along === 'z') slabGeo.rotateY(Math.PI / 2);
+    slabGeo.computeBoundingBox();
     const slab = new THREE.Mesh(slabGeo, mat === M.woodDoor ? detailMaterials(this).wood : mat);
     slab.castShadow = true;
     slab.receiveShadow = true;
@@ -776,6 +779,7 @@ export class Level {
         : boxAABB(x + width / 2, y + height / 2, pz, width, height, 0.12),
       label, enabled: true,
       hinge: new THREE.Vector3(px, y, pz),
+      localBounds: slabGeo.boundingBox.clone(), worldBounds: slabGeo.boundingBox.clone(), collisionAngle: null,
     };
     this.doors.push(door);
     const it = {
@@ -815,29 +819,57 @@ export class Level {
     return it;
   }
 
-  updateDoors(dt) {
+  updateDoors(dt, playerPos = null) {
     for (const d of this.doors) {
       if (d.type === 'swing') {
+        const previous = d.angle;
         d.angle = clamp(d.angle + (d.target * d.openAngle - d.angle) * Math.min(1, dt * 3.2), 0, d.openAngle);
+        if (Math.abs(d.angle - d.target * d.openAngle) < .00001) d.angle = d.target * d.openAngle;
         d.pivot.rotation.y = d.angle * d.dir;
-        if (d.angle < 1.05) {
+        if (d.collisionAngle !== d.angle) {
           // collider = the SLAB's own box only (excluding the knob child, which
           // would otherwise inflate the closed-door collision by ~0.5m)
-          d.slab.updateWorldMatrix(true, true);
-          d.slab.geometry.computeBoundingBox();
-          const bb = d.slab.geometry.boundingBox.clone().applyMatrix4(d.slab.matrixWorld);
+          d.slab.updateWorldMatrix(true, false);
+          const bb = d.worldBounds.copy(d.localBounds).applyMatrix4(d.slab.matrixWorld);
+          // 门扇不能把玩家挤入墙角。关门受阻会重新打开；开门受阻则等待让路。
+          if (playerPos && bb.min.x < playerPos.x + .3 && bb.max.x > playerPos.x - .3 &&
+            bb.min.z < playerPos.z + .3 && bb.max.z > playerPos.z - .3 &&
+            bb.max.y > playerPos.y + .35 && bb.min.y < playerPos.y + 1.67) {
+            d.angle = previous; d.pivot.rotation.y = previous * d.dir;
+            if (!d.open) { d.open = true; d.target = 1; }
+            if (!d.obstructed) this.handlers.onDoorBlocked?.(d);
+            d.obstructed = true;
+            d.slab.updateWorldMatrix(true, false);
+            bb.copy(d.localBounds).applyMatrix4(d.slab.matrixWorld);
+          } else d.obstructed = false;
           d.collider = { x0: bb.min.x, y0: bb.min.y, z0: bb.min.z, x1: bb.max.x, y1: bb.max.y, z1: bb.max.z };
-        } else d.collider = null;
+          d.collisionAngle = d.angle;
+        }
       } else {
+        const previous = d.slidePos;
         d.slidePos += (d.slideTarget - d.slidePos) * Math.min(1, dt * 3.0);
         const base = d.width / 2;
         if (d.along === 'z') d.slab.position.z = base + d.slidePos;
         else d.slab.position.x = base + d.slidePos;
-        if (d.slidePos > -0.7) {
+        {
           d.collider = d.along === 'z'
             ? boxAABB(d.hinge.x, d.hinge.y + d.height / 2, d.hinge.z + base + d.slidePos, 0.12, d.height, d.width)
             : boxAABB(d.hinge.x + base + d.slidePos, d.hinge.y + d.height / 2, d.hinge.z, d.width, d.height, 0.12);
-        } else d.collider = null;
+          const c = d.collider;
+          if (playerPos && c.x0 < playerPos.x + .3 && c.x1 > playerPos.x - .3 &&
+            c.z0 < playerPos.z + .3 && c.z1 > playerPos.z - .3 &&
+            c.y1 > playerPos.y + .35 && c.y0 < playerPos.y + 1.67) {
+            d.slidePos = previous;
+            if (!d.open) { d.open = true; d.target = 1; d.slideTarget = -d.slideOffset; }
+            if (!d.obstructed) this.handlers.onDoorBlocked?.(d);
+            d.obstructed = true;
+            if (d.along === 'z') d.slab.position.z = base + previous;
+            else d.slab.position.x = base + previous;
+            d.collider = d.along === 'z'
+              ? boxAABB(d.hinge.x, d.hinge.y + d.height / 2, d.hinge.z + base + previous, .12, d.height, d.width)
+              : boxAABB(d.hinge.x + base + previous, d.hinge.y + d.height / 2, d.hinge.z, d.width, d.height, .12);
+          } else d.obstructed = false;
+        }
       }
     }
   }
@@ -1885,7 +1917,7 @@ export class Level {
   }
 
   update(dt, time, playerPos = null, viewDir = null, reduced = false) {
-    this.updateDoors(dt);
+    this.updateDoors(dt, playerPos);
     // 灯光预算节流重算（0.12s）：排序 51 盏灯的成本可忽略，切换只改 uniforms
     this._budgetT -= dt;
     if (this._budgetT < 0 && playerPos) {

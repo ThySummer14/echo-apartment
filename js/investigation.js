@@ -3,6 +3,17 @@ import { WORLD_AREAS } from './campaign-world.js';
 
 const $ = (id) => document.getElementById(id);
 const puzzleDefinitions = {
+  generator: {
+    title: '地下旧区备用输出', description: '装回输出熔断器，按机房规程启动柴油机。',
+    labels: ['供油', '预热', '接通输出'], values: [0, 1, 2],
+    hint: '发电机房的规程：预热 → 供油 → 接通输出。熔断器在搬迁档案库的绿色维修盒。',
+    complete: '柴油机起动了。旧区尽头的电台终于通电。',
+  },
+  radio: {
+    title: '没有回应的频道', description: '四位调谐码。频道表留在电台旁边。',
+    hint: '14.07 MHz，去掉小数点，输入 1407。需要先启动备用柴油机。',
+    complete: '「请报地点与姓名。」这一次，你没有结束呼叫。',
+  },
   develop: {
     title: '被抹去的全家福', description: '让底片经过四只药液托盘。桌上的规程记录着冲洗次序。',
     labels: ['显影', '定影', '停显', '水洗'], values: [0, 1, 2, 3], length: 4,
@@ -320,9 +331,10 @@ export class InvestigationUI {
     $('puzzle-description').textContent = definition.description;
     $('puzzle-status').textContent = '';
     $('puzzle-code').value = '';
-    $('puzzle-code').classList.toggle('hidden', id !== 'cabinet');
-    $('puzzle-keypad').classList.toggle('hidden', id !== 'cabinet');
-    $('puzzle-sequence').classList.toggle('hidden', id === 'cabinet');
+    const coded = ['cabinet', 'radio'].includes(id);
+    $('puzzle-code').classList.toggle('hidden', !coded);
+    $('puzzle-keypad').classList.toggle('hidden', !coded);
+    $('puzzle-sequence').classList.toggle('hidden', coded);
     const buttons = $('puzzle-controls');
     buttons.replaceChildren();
     definition.labels?.forEach((label, index) => {
@@ -352,7 +364,7 @@ export class InvestigationUI {
       keypad.appendChild(button);
     });
     this.renderSequence();
-    if (id === 'cabinet') $('puzzle-code').focus();
+    if (coded) $('puzzle-code').focus();
     else $('puzzle-close').focus();
   }
 
@@ -401,7 +413,7 @@ export class InvestigationUI {
 
   submitPuzzle() {
     const id = this.puzzle;
-    const input = id === 'cabinet' ? $('puzzle-code').value.trim() : this.sequence;
+    const input = ['cabinet', 'radio'].includes(id) ? $('puzzle-code').value.trim() : this.sequence;
     const result = this.game.campaign.perform(id, input);
     if (!result.ok) {
       $('puzzle-status').textContent = result.message;
@@ -413,6 +425,7 @@ export class InvestigationUI {
     this.game._sub(puzzleDefinitions[id].complete, '', 5);
     if (id === 'music') this.game._readNote(7);
     if (id === 'develop') this.game._readNote(14);
+    if (id === 'radio') this.game._readNote(23);
   }
 
   chooseEnding() {

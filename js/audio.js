@@ -55,6 +55,8 @@ export class AudioEngine {
       { x:22.6, y:-1.0, z:16.3, frequency:145, gain:.035, range:8, type:'triangle' },
       { x:-25.4, y:3.7, z:42.4, frequency:760, gain:.018, range:6, type:'noise' },
       { x:0, y:7, z:78, frequency:280, gain:.04, range:17, type:'noise' },
+      { x:38, y:-1.8, z:40, frequency:88, gain:.05, range:15, type:'triangle', campaignFlag:'generator' },
+      { x:37, y:-2, z:58, frequency:340, gain:.023, range:12, type:'noise' },
     ];
     const c = this.ctx;
     for (const spec of sources) {
@@ -82,7 +84,7 @@ export class AudioEngine {
     for (const source of this.environment) {
       const distance = Math.hypot(position.x-source.x,position.y-source.y,position.z-source.z);
       const occluded = distance < source.range && blocked(source);
-      source.volume.gain.setTargetAtTime(distance < source.range ? source.gain * (occluded ? .12 : 1) : 0, t, .25);
+      source.volume.gain.setTargetAtTime(distance < source.range && source.enabled !== false ? source.gain * (occluded ? .12 : 1) : 0, t, .25);
       source.filter.frequency.setTargetAtTime(source.frequency * (occluded ? .5 : 1), t, .25);
     }
     if (this.revGain) this.revGain.gain.setTargetAtTime(position.y < -.8 ? .68 : position.y > 4.8 ? .18 : .42, t, .6);

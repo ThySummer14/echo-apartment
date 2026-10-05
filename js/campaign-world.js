@@ -3,9 +3,11 @@ import { stdMat, basicMat, boxAABB, mulberry32 } from './util.js';
 import { buildSwitchbackStair } from './stairs.js';
 import { detailMaterials, fixtureDetails, finishStairwell } from './models.js';
 import { WEST_AREAS, buildWestWing } from './west-wing.js';
+import { buildBasementAnnex, ANNEX_AREAS } from './basement-annex.js';
 
 // 平面图与位置提示共用真实关卡坐标。
 export const WORLD_AREAS = [
+  ...ANNEX_AREAS,
   ...WEST_AREAS,
   { name: '入口大厅', floor: 0, bounds: [-5, -9, 5, -2] },
   { name: '玄关', floor: 0, bounds: [-1.7, -2, 1.7, 1.8] },
@@ -241,7 +243,7 @@ export function buildCampaignWorld(level) {
   // 屋顶保留楼梯井，周围是可绕行的晾晒场；开口有防坠护栏。
   level.floor(-6, 67.25, 4, 11.1, 5.6, M.concrete);
   level.floor(6, 67.25, 4, 11.1, 5.6, M.concrete);
-  level.floor(0, 62.45, 8, 1.5, 5.6, M.concrete);
+  level.floor(0, 62.95, 8, 2.5, 5.6, M.concrete);
   level.floor(0, 77.9, 16, 10.2, 5.6, M.concrete);
   level.wallX(-8, 61.7, 83, 5.6, 1.12, M.concrete);
   level.wallX(8, 61.7, 83, 5.6, 1.12, M.concrete);
@@ -252,6 +254,11 @@ export function buildCampaignWorld(level) {
     for (let z = 63.1; z < 73; z += 0.7) cylinder(x, 6.12, z, 0.025, 1.04, grey);
   }
   box(0, 72.73, 5.6, 8.2, 0.07, 1.04, grey, true);
+  // 平台两侧的屋顶地板在起跑线处封边，不能从楼梯口旁走入井内。
+  for (const x of [-2.95, 2.95]) {
+    box(x, 64.18, 5.6, 2.1, .07, 1.12, grey, true);
+    for (const dx of [-.85, -.42, 0, .42, .85]) cylinder(x + dx, 6.16, 64.18, .022, 1.12, grey);
+  }
   for (const x of [-3.05, 3.05]) for (const z of [75, 81]) cylinder(x, 6.8, z, 0.045, 2.4, grey);
   for (const x of [-3.05, 3.05]) cylinder(x, 7.98, 78, 0.038, 6.0, grey, 'z');
   for (let i = 0; i < 5; i++) {
@@ -381,7 +388,7 @@ export function buildCampaignWorld(level) {
   // 地下维修层：排水设备、管线、潮湿地面、手写检修规程。
   level.room(11.8, 24, 14, 29, {
     y: -2.8, h: 2.8, wallMat: M.concrete, floorMat: M.concrete,
-    gaps: { w: [[19.4, 21.6]] },
+    gaps: { w: [[19.4, 21.6]], s: [[15.8, 17.4]] },
   });
   level.floor(11.6, 20.5, 0.5, 3.0, -2.8, M.concrete);
   level.wallX(20, 14, 29, -2.8, 2.8, M.concrete, [[21, 22.5]]);
@@ -589,6 +596,7 @@ export function buildCampaignWorld(level) {
   closet(3, 14.7, 0);
   world.musicBox = musicBox;
   buildWestWing(level, { box, mesh, cylinder, sign, lamp, desk, chair, shelf, closet, recordDocument, pickup });
+  buildBasementAnnex(level, { box, mesh, cylinder, sign, lamp, desk, chair, shelf, closet, recordDocument, pickup });
 
   // 不再用满地血迹承担全部叙事；墙面的潮痕和住户留下的标记更有辨识度。
   for (const [x, z, y, face] of [[-1.58, 17, 1.2, 'e'], [1.58, 26.2, 1.25, 'w'],
@@ -617,10 +625,15 @@ export function syncCampaignWorld(level, campaign) {
   world.doors.pump.locked = !campaign.flags.memory;
   world.doors.workshop.locked = !campaign.flags.power;
   world.doors.west.locked = !campaign.flags.memory;
+  world.doors.annex.locked = !campaign.flags.photo;
+  for (const [rec, active] of [[world.generatorLamp, campaign.flags.generator], [world.radioLamp, campaign.flags.relay]]) {
+    rec.light.intensity = active ? rec.base : 0;
+    rec.bulb.material.color.setHex(active ? 0xa7ce9e : 0x25362a);
+  }
   world.photo.visible = !!campaign.flags.photo;
   level.exitDoor.locked = !campaign.flags.released;
   for (const [id, rec] of Object.entries(world.pickups)) {
-    const taken = campaign.items.has(id) || (id === 'fuse' && campaign.flags.power) || (id === 'valveHandle' && campaign.flags.released) || (['film', 'developer'].includes(id) && campaign.flags.photo);
+    const taken = campaign.items.has(id) || (id === 'fuse' && campaign.flags.power) || (id === 'relayFuse' && campaign.flags.generator) || (id === 'valveHandle' && campaign.flags.released) || (['film', 'developer'].includes(id) && campaign.flags.photo);
     rec.mesh.visible = !taken;
     rec.interactable.disabled = taken;
   }

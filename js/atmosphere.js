@@ -20,6 +20,8 @@ export class AtmosphereDirector {
     this.areaTime += dt; this.acousticTimer -= dt;
     if (this.acousticTimer <= 0) {
       this.acousticTimer = .12; g.camera.getWorldDirection(this.look);
+      for (const source of g.audio.environment || []) if (source.campaignFlag)
+        source.enabled = !!g.campaign.flags[source.campaignFlag];
       g.audio.updateEnvironment(g.camera.position, this.look, point => {
         // 发声设备自身的外壳不算墙体遮挡；墙与关闭的门仍使声音变闷。
         const blockers=g.level.colliders.filter(c=>!(point.x>=c.x0&&point.x<=c.x1&&point.y>=c.y0&&point.y<=c.y1&&point.z>=c.z0&&point.z<=c.z1));
@@ -28,8 +30,21 @@ export class AtmosphereDirector {
     }
     for (const rec of g.level.campaign.dynamics) if (rec.kind === 'print')
       rec.mesh.rotation.y = Math.sin(g.campaign.elapsed * .7 + rec.phase) * .035;
+    if (g.campaign.flags.generator && g.level.campaign.generatorRotor)
+      g.level.campaign.generatorRotor.rotation.x += dt * 5;
     if (this.areaTime < 1.2 || this.cooldown > 0 || g.monster.state === 'chase') return;
-    if (area === '西翼封闭走廊' && g.campaign.flags.memory) {
+    if (area === '地下旧区连廊') {
+      this.once('annex-arrival', () => { g.audio.hammer(.5); g._sub('另一侧的门不是出口。这里藏着那一夜没有发出的求救。', '', 5); g._setFear(.45); });
+    } else if (area === '地下值班站') {
+      this.once('watch-arrival', () => { g.audio.knock(3); g._sub('交班日志最后一栏，写着「管道水锤」。', '', 4); });
+    } else if (area === '旧蓄水池') {
+      this.once('cistern-arrival', () => {
+        g.audio.duck(); g.audio.lullaby(); g._sub('每一道刻线，都是他等你来找的一轮数数。', '', 5);
+        g.ghost.appearAt(29, -2.8, 61, Math.PI / 2); g._setFear(.5);
+      });
+    } else if (area === '应急电台室' && !g.campaign.flags.relay) {
+      this.once('radio-arrival', () => { g.audio.buzz(); g._sub('电台旁的纸条写着：不要因为没有回应，就结束呼叫。', '', 5); });
+    } else if (area === '西翼封闭走廊' && g.campaign.flags.memory) {
       this.once('west-arrival', () => {
         g.audio.cameraShutter(-.5); g._sub('这条走廊……原来一直在这里。红灯还亮着。', '', 5);
         g._setFear(Math.max(.4, g.fear));

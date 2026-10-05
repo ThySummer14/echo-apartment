@@ -13,6 +13,7 @@ import { Campaign, DOCUMENTS, CHAPTERS, SAVE_KEY, ENDINGS } from './campaign.js'
 import { syncCampaignWorld, currentArea } from './campaign-world.js';
 import { InvestigationUI } from './investigation.js';
 import { AtmosphereDirector } from './atmosphere.js';
+import { TraversalGuard } from './traversal.js';
 import { interactionBlocked } from './interaction.js';
 import { setSnapResolution, aabbFromSphere, moveWithCollisions, clamp, lerp, rand, chance, pick } from './util.js';
 
@@ -363,6 +364,7 @@ class Game {
     this.level = new Level(this.scene, {
       onLocked: (d) => { this._sub(d.lockedMsg, ''); this.audio.woodenCreak(); },
       onDoorToggle: (d, open) => { open ? this.audio.doorOpen() : this.audio.doorClose(); },
+      onDoorBlocked: () => this._sub('门扇被挡住了。退开一点，让它转过去。', '', 2.5),
       onDeadDoor: () => {
         this._sub('这里……是墙？', 'ここは…壁？');
         this.audio.woodenCreak();
@@ -441,6 +443,7 @@ class Game {
 
     this.playerPos = new THREE.Vector3().copy(this.level.playerStart);
     this.char = aabbFromSphere(this.playerPos.x, this.playerPos.y, this.playerPos.z, PLAYER_R, PLAYER_H);
+    this.traversal = new TraversalGuard();
 
     // flashlight (physical units: bright enough to read the room but NOT so hot
     // that the beam clips to a big white blob on nearby walls; faster falloff
@@ -874,7 +877,7 @@ class Game {
 
   _campaignAdvanced(action) {
     this._refreshCampaign();
-    if (['power', 'cabinet', 'music', 'develop'].includes(action)) this._showChapter();
+    if (['power', 'cabinet', 'music', 'develop', 'radio'].includes(action)) this._showChapter();
     if (action === 'power') {
       this.battery = Math.max(this.battery, 80);
       this.audio.buzz(); this.shake = 0.12;
@@ -896,16 +899,25 @@ class Game {
       this.storyEvents.push({ delay: 4, action: () => {
         this._sub('「苍太。」你念出照片背面的名字。地下的铁链松了。', '', 5); this.audio.hammer(-.3);
       } });
+    } else if (action === 'generator') {
+      this.audio.buzz(); this.audio.hammer(.4); this.shake = .07;
+      this.battery = Math.max(60, this.battery);
+    } else if (action === 'radio') {
+      this.audio.switchClick(); this.audio.whisper(-.2, 2);
+      this._setFear(.15);
+      this.storyEvents.push({delay: 4, action: () => {
+        this.audio.knock(3); this._sub('远处的继电器吸合了。回到原泵房，这次把门打开。', '', 5);
+      }});
     } else if (action === 'valves') this._startFinale();
   }
 
-  _wakeAtCheckpoint() {
-    const p = this.campaign.checkpoint;
+  _wakeAtCheckpoint(p = this.campaign.checkpoint) {
     this.playerPos.set(p.x, p.y, p.z);
     this.char = aabbFromSphere(p.x, p.y, p.z, PLAYER_R, PLAYER_H);
     this.camera.position.set(p.x, p.y + EYE, p.z);
     this.camera.rotation.set(0, Math.PI, 0);
     this.eyeY = p.y; this.vy = 0; this.grounded = true;
+    this.traversal.reset(p);
     this.hiding = false; this.hideTimer = 0;
     $('hide-state').classList.add('hidden');
     this.monster.despawn(); this.ghost.hide();
@@ -1925,6 +1937,12 @@ class Game {
     this.playerPos.x = (this.char.x0 + this.char.x1) / 2;
     this.playerPos.z = (this.char.z0 + this.char.z1) / 2;
     this.playerPos.y = this.char.y0;
+    const recovery = this.traversal.update(this.char, this.grounded, dynColliders, dt);
+    if (recovery) {
+      this._wakeAtCheckpoint(recovery);
+      this._sub('脚下的地面失去支撑。你退回了刚才站稳的位置。', '', 3);
+      return;
+    }
 
     // head bob + footsteps (based on actual displacement, not input)
     const hSpeed = Math.hypot(this.playerPos.x - ox, this.playerPos.z - oz) / dt;

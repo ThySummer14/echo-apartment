@@ -94,7 +94,12 @@ for (const f of findings.slice(0, 40)) {
 // march the player along every wall face at sprint speed, angled INTO the
 // wall; the resolver must never let the AABB penetrate a collider > 2cm.
 const R = 0.3, H = 1.75;
-let clips = 0, tests = 0;
+let clips = 0, tests = 0, falls = 0;
+const onStair = p => level.stairs.some(s => {
+  const dx=p.x-s.x,dz=p.z-s.z,co=Math.cos(s.rotation),si=Math.sin(s.rotation);
+  return Math.abs(dx*co-dz*si)<s.width+s.gap/2+.3 &&
+    dx*si+dz*co>=-s.frontDepth-.3 && dx*si+dz*co<=s.run+s.landingDepth+.3;
+});
 const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.707, 0.707], [-0.707, 0.707], [0.707, -0.707], [-0.707, -0.707]];
 for (const c of colliders) {
 
@@ -108,14 +113,14 @@ for (const c of colliders) {
   for (const [ux, uz] of dirs) {
     const sx = (c.x0 + c.x1) / 2 + ux * ((c.x1 - c.x0) / 2 + R + 0.35);
     const sz = (c.z0 + c.z1) / 2 + uz * ((c.z1 - c.z0) / 2 + R + 0.35);
-    if (sx < -18.5 || sx > 32 || sz < -10 || sz > 84) continue;
+    if (sx < -31 || sx > 45 || sz < -10 || sz > 84) continue;
     // start standing on the local floor (the raised segment tops at 0.16);
     // starting at y=0 inside that slab is a state the player can never reach
     let floorTop = -10;
     for (const s of colliders) {
       // the player's CENTER must be supported by the floor; a partial AABB
       // overlap at the edge of a slab is not a place a player can stand.
-      if (s.x0 < sx && s.x1 > sx && s.z0 < sz && s.z1 > sz &&
+      if (s.walkable && s.x0 < sx && s.x1 > sx && s.z0 < sz && s.z1 > sz &&
           s.y1 <= c.y0 + 0.3 && s.y1 > floorTop) floorTop = s.y1;
     }
     if (floorTop < -5) continue; // inside an enclosed cavity (e.g. stairwell void) - a player can never stand there
@@ -126,7 +131,11 @@ for (const c of colliders) {
     if (embedded) continue;
     for (let i = 0; i < 90; i++) {
       moveWithCollisions(char, -ux * 3.9 * 0.017, -0.28, -uz * 3.9 * 0.017, colliders, 0.35);
-      if (char.y0 < floorTop - 0.5) break; // fell out of the world - report below as clip
+      if (char.y0 < floorTop - 0.5) {
+        const p={x:(char.x0+char.x1)/2,z:(char.z0+char.z1)/2};
+        if(!onStair(p)) { falls++; if(falls<8)console.log('UNSUPPORTED FALL',p,floorTop,char.y0); }
+        break;
+      }
       tests++;
       for (const b of colliders) {
         // only colliders tall enough to actually BLOCK count as clips; the
@@ -147,6 +156,7 @@ for (const c of colliders) {
   }
 }
 console.log(`--- wall-clip stress: ${tests} steps, ${clips} penetrations`);
+console.log(`--- unexpected edge falls: ${falls}`);
 
 // ---------- 3) ground under every monster node ----------
 let nodeBad = 0;
@@ -160,4 +170,4 @@ for (const n of level.monsterNodes) {
 }
 console.log(`--- monster nodes without floor: ${nodeBad}`);
 
-if (clips || nodeBad) process.exitCode = 1;
+if (clips || nodeBad || falls) process.exitCode = 1;

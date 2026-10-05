@@ -36,6 +36,17 @@ export function aabbFromSphere(x, y, z, r, h) {
 // opts.bodyHeight: effective blocking height above the feet (a hunched creature
 // folds under low ceilings; only obstacles below feet+bodyHeight stop it).
 export function moveWithCollisions(char, dx, dy, dz, colliders, stepUp = 0.35, opts = {}) {
+  // 检测每段位移经过的墙体，而非只看最终位置；低帧率和高速移动也不能穿薄墙。
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) / .18));
+  let result = { grounded: false, blocked: false };
+  for (let i = 0; i < steps; i++) {
+    const next = collisionStep(char, dx / steps, dy / steps, dz / steps, colliders, stepUp, opts);
+    result = { grounded: next.grounded, blocked: result.blocked || next.blocked };
+  }
+  return result;
+}
+
+function collisionStep(char, dx, dy, dz, colliders, stepUp, opts) {
   const foot = char.y0;
   const w = char.x1 - char.x0, d = char.z1 - char.z0;
   const bodyTop = foot + (opts.bodyHeight ?? (char.y1 - char.y0));
@@ -109,6 +120,7 @@ export function moveWithCollisions(char, dx, dy, dz, colliders, stepUp = 0.35, o
         return false;
       };
       const badL = collides(left), badR = collides(right);
+      if (badL && badR) { blockedXZ = true; continue; }
       // Prefer the escape direction that does not shove the character into
       // another wall (e.g. a low nightstand next to a wall: the short escape
       // points into the wall, the long one points into the room).
@@ -135,6 +147,7 @@ export function moveWithCollisions(char, dx, dy, dz, colliders, stepUp = 0.35, o
         return false;
       };
       const badD = collides(down), badU = collides(up);
+      if (badD && badU) { blockedXZ = true; continue; }
       if (badD && !badU) { char.z0 = up.z0; char.z1 = up.z1; }
       else if (badU && !badD) { char.z0 = down.z0; char.z1 = down.z1; }
       else if (penL <= penR) { char.z0 = down.z0; char.z1 = down.z1; }

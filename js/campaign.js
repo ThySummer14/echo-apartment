@@ -59,7 +59,7 @@ export const DOCUMENTS = {
   },
   14: {
     title: '被抹去的全家福', location: '二楼西翼 · 暗房冲洗台', item: '找回的名字',
-    cn: '1998年7月13日，屋顶。\n\n照片上的母亲正在收床单。父亲抱着一篮衣服。\n右边站着两个孩子。年长的那个牵着弟弟的手。\n\n背面是母亲的字：\n「苍太，七岁。哥哥，十二岁。一个也不能少。」\n\n水痕没有抹去他，是我把他从记忆里删掉了。\n\n我翻过照片，第一次没有避开那个名字。\n地下传来铁链松动的声音。',
+    cn: '1998年7月13日，屋顶。\n\n照片上的母亲正在收床单。父亲抱着一篮衣服。\n右边站着两个孩子。年长的那个牵着弟弟的手。\n\n背面是母亲的字：\n「苍太，七岁。哥哥，十二岁。一个也不能少。」\n\n水痕没有抹去他，是我把他从记忆里删掉了。\n\n相纸夹层里，留着地下旧区的钥匙。摄影师写道：\n「不要只把照片带走。旧区最里面的应急电台，还没有等到回应。」',
   },
   15: {
     title: '最后一册住户名簿', location: '二楼西翼 · 住户纪念室', item: '住户名簿',
@@ -73,6 +73,34 @@ export const DOCUMENTS = {
     title: '防水袋里的收据', location: '二楼西翼 · 住户纪念室', item: '事故前的凭据',
     cn: '回声公寓 · 排水设备检修\n\n7月12日：泵房门锁失效，雨季前应立即更换。\n7月13日：维修申请被退回，原因为「拆除在即，费用不予批准」。\n\n收据背面，四位住户共同签字。\n\n这不是一个孩子的错，也不是只有一个人知道的秘密。\n\n［防水袋上的标签写着：不要把证据也带进水里。］',
   },
+  18: {
+    title: '最后一次交班日志', location: '地下旧区 · 值班站', item: '夜班记录',
+    cn: '7月14日，02:17\n\n停电。主泵断开，备用机未启动。\n走廊里有一个孩子说，哥哥在门外。\n\n02:31\n我听见敲击，记录成「管道水锤」。\n\n03:06\n救援频道没有人应答。不是他们没有来，是我们根本没有发出呼叫。\n\n［页边补记：输出熔断器放在搬迁档案库的绿色维修盒。先恢复柴油机，再去最里面的电台室。］',
+  },
+  19: {
+    title: '备用柴油机启动规程', location: '地下旧区 · 发电机房', item: '启动规程',
+    cn: '备用柴油发电机 · 人工启动\n\n装回输出熔断器后：\n\n① 预热\n② 供油\n③ 接通输出\n\n供油前必须预热，输出不得提前接通。\n\n备用输出只连接应急电台与远端泵房继电器。主楼来电不代表电台已经恢复。',
+  },
+  20: {
+    title: '没有结清的搬迁总账', location: '地下旧区 · 搬迁档案库', item: '搬迁总账',
+    cn: '三号室：四人。\n补偿人数：三人。\n\n一份事故记录被改成了设备故障。一份维修申请被压到了拆除清单下面。\n\n摄影师在封面上写：\n「如果所有人都说没有发生，那个孩子就会永远待在这里。」\n\n绿色维修盒里保存着旧区输出熔断器。请让那部电台重新通电。',
+  },
+  21: {
+    title: '应急呼叫频道表', location: '地下旧区 · 应急电台室', item: '电台频道',
+    cn: '夜间救援专用：14.07 MHz\n\n旧面板只接受四位数，去掉小数点，输入 1407。\n\n按住通话，先报地点，再报姓名。\n不要因为没有立刻听见回应，就结束呼叫。\n\n［手写字：回声公寓，地下层。苍太，七岁。还有人等着他回家。］',
+  },
+  22: {
+    title: '蓄水池旁的刻字', location: '地下旧区 · 旧蓄水池', item: '孩子留下的标记',
+    cn: '苍太，七岁。\n哥哥，十二岁。\n\n每一道刻线都是一轮数数。最后一道没有画完。\n\n刻字旁边写着：\n「只要歌还会响，哥哥就能找到我。」\n\n你终于明白，那些敲击从来不是想让人离开。',
+  },
+  23: {
+    title: '终于发出的求救', location: '地下旧区 · 应急电台', item: '救援呼叫转写',
+    cn: '［电流声。随后，对面有人回答。］\n\n「请报地点与姓名。」\n\n「回声公寓，地下层。苍太，七岁。」\n\n「收到。不要再把门关上。」\n\n你没有放开通话键。\n你把那个名字又说了一遍。\n\n远端泵房的继电器接通了。现在可以带手轮回到原排水间，泄压、排水、回水。\n这一次，不会再有人把敲门声写成故障。',
+  },
+  24: {
+    title: '泵房门锁工单', location: '地下旧区 · 值班站', item: '未执行工单',
+    cn: '泵房门锁：由内部不能打开。\n建议立即撤换，并在电台侧增加远程解锁继电器。\n\n验收栏一直空着。\n\n摄影师偷偷接好了继电器，却没有给备用电台通电。\n\n［最后的批注：需要先启动柴油机，再接通救援频道。机械手轮仍在一楼东翼维修室。］',
+  },
 
 };
 
@@ -81,11 +109,12 @@ export const CHAPTERS = [
   { title: '停电的那一夜', subtitle: '这栋楼记得你遗忘的事情。' },
   { title: '没有结束的捉迷藏', subtitle: '歌停之后，谁也没有来。' },
   { title: '照片里少了一个人', subtitle: '被抹去的名字，还留在底片上。' },
+  { title: '井下的来电', subtitle: '那一夜没有发出的求救，终于有人回答。' },
   { title: '把名字带出去', subtitle: '这一次，别再独自离开。' },
 ];
 
-const FLAG_NAMES = ['invitation', 'power', 'cabinet', 'tapePlayed', 'memory', 'photo', 'released', 'ended'];
-const ITEM_NAMES = ['serviceKey', 'fuse', 'archiveKey', 'tape', 'valveHandle', 'exitKey', 'westKey', 'film', 'developer'];
+const FLAG_NAMES = ['invitation', 'power', 'cabinet', 'tapePlayed', 'memory', 'photo', 'generator', 'relay', 'released', 'ended'];
+const ITEM_NAMES = ['serviceKey', 'fuse', 'archiveKey', 'tape', 'valveHandle', 'exitKey', 'westKey', 'film', 'developer', 'annexKey', 'relayFuse'];
 const docIds = Object.keys(DOCUMENTS);
 const equalSequence = (input, expected) => Array.isArray(input) &&
   input.length === expected.length && input.every((value, index) => value === expected[index]);
@@ -102,6 +131,7 @@ export class Campaign {
   }
 
   get chapter() {
+    if (this.flags.relay) return 5;
     if (this.flags.photo) return 4;
     if (this.flags.memory) return 3;
     if (this.flags.cabinet) return 2;
@@ -122,6 +152,9 @@ export class Campaign {
     if (!this.flags.photo && !this.items.has('film')) return '用八音盒里的钥匙打开二楼西翼，到 204 寻找底片';
     if (!this.flags.photo && !this.items.has('developer')) return '在西翼住户纪念室取回显影液';
     if (!this.flags.photo) return '到二楼西翼暗房，洗出三号室的全家福';
+    if (!this.flags.generator && !this.items.has('relayFuse')) return '用相纸夹层的钥匙进入地下旧区，在搬迁档案库找输出熔断器';
+    if (!this.flags.generator) return '到地下旧区发电机房，恢复电台备用输出';
+    if (!this.flags.relay) return '到地下旧区最里面的电台室，接通救援频道';
     if (!this.flags.released && !this.items.has('valveHandle')) return '到一楼东翼维修室取回排水阀手轮';
     if (!this.flags.released) return '返回地下排水间，装回手轮并转开三只阀门';
     return '带着苍太的名字，前往二楼天井防火门';
@@ -136,6 +169,8 @@ export class Campaign {
     if (!this.flags.tapePlayed) return '202 在二楼走廊右侧，203 在左侧。需要档案柜里的钥匙。';
     if (!this.flags.memory) return '画上标出了第 3、第 1、第 4 根线。按这个顺序弹奏四个音。';
     if (!this.flags.photo) return '西翼入口在二楼靠近楼梯间的左侧。204 桌上有底片，北面的纪念室有显影液。暗房红灯旁记录着冲洗顺序。';
+    if (!this.flags.generator) return '旧区入口在地下配电间最里面。输出熔断器在档案库绿色维修盒，柴油机按预热、供油、输出启动。';
+    if (!this.flags.relay) return '电台在旧区尽头。频道表标明 14.07 MHz，去掉小数点，输入 1407。';
     if (!this.flags.released && !this.items.has('valveHandle')) return '东翼入口在一楼长走廊右侧。手轮留在管理员维修室的工具台上。';
     if (!this.flags.released) return '带手轮到地下排水间。录音记录着操作次序：泄压、排水、回水。';
     return '防火门在二楼走廊中段。保持电量；衣柜可以躲藏，但别在它眼前躲进去。';
@@ -156,6 +191,8 @@ export class Campaign {
     if (!ITEM_NAMES.includes(id) || this.items.has(id)) return false;
     if (['westKey', 'film', 'developer'].includes(id) && !this.flags.memory) return false;
     if ((id === 'film' || id === 'developer') && this.flags.photo) return false;
+    if (['annexKey', 'relayFuse'].includes(id) && !this.flags.photo) return false;
+    if (id === 'relayFuse' && this.flags.generator) return false;
     this.items.add(id);
     return true;
   }
@@ -197,12 +234,27 @@ export class Campaign {
       if (!this.items.has('developer')) return fail('显影液用完了。北面的住户纪念室里有一瓶。');
       if (!equalSequence(input, [0, 2, 1, 3])) return fail('纸上的影像散开了。先显影，再停显、定影，最后水洗。');
       this.flags.photo = true;
+      this.items.add('annexKey');
       this.items.delete('film'); this.items.delete('developer');
       this.collectDocument(14);
       this.checkpoint = { x: -25, y: 2.8, z: 50.5 };
+    } else if (action === 'generator') {
+      if (!this.flags.photo) return fail('地下旧区仍然锁着。先洗出全家福。');
+      if (this.flags.generator) return fail('备用柴油机已经启动。');
+      if (!this.items.has('relayFuse')) return fail('输出熔断器缺失。旧区档案库的绿色维修盒里有备件。');
+      if (!equalSequence(input, [1, 0, 2])) return fail('柴油机没有起动。先预热，再供油，最后接通输出。');
+      this.flags.generator = true; this.items.delete('relayFuse');
+      this.checkpoint = { x: 31, y: -2.8, z: 40 };
+    } else if (action === 'radio') {
+      if (!this.flags.generator) return fail('电台没有电。先恢复旧区柴油机输出。');
+      if (this.flags.relay) return fail('救援频道已经接通。转写收在调查手册中。');
+      if (String(input) !== '1407') return fail('只有杂音。频道表标明了四位调谐码。');
+      this.flags.relay = true; this.collectDocument(23);
+      this.checkpoint = { x: 18, y: -2.8, z: 62.5 };
     } else if (action === 'valves') {
       if (!this.flags.memory) return fail('水闸封死了。似乎在等待有人记起什么。');
       if (!this.flags.photo) return fail('铁链仍然绷紧。先在西翼暗房找回照片里的名字。');
+      if (!this.flags.relay) return fail('远端继电器没有接通。先到地下旧区启动柴油机，并通过电台发出求救。');
       if (this.flags.released) return fail('排水已经完成。天井的防火门可以打开了。');
       if (!this.items.has('valveHandle')) return fail('第三只阀门没有手轮。一楼东翼维修室的工具台上应该还留着它。');
       if (!equalSequence(input, [0, 2, 1])) return fail('水压没有下降。录音里的次序是泄压、排水、回水。');
@@ -225,7 +277,7 @@ export class Campaign {
       version: 2, flags: { ...this.flags }, items: [...this.items],
       documents: [...this.documents], checkpoint: { ...this.checkpoint },
       elapsed: Math.max(0, this.elapsed), ending: this.ending ?? null,
-      revision: 3, events: [...this.events],
+      revision: 4, events: [...this.events],
     };
   }
 
@@ -242,12 +294,22 @@ export class Campaign {
     if (!this.flags.tapePlayed) for (const flag of ['memory', 'photo', 'released', 'ended']) delete this.flags[flag];
     if (!this.flags.memory) for (const flag of ['photo', 'released', 'ended']) delete this.flags[flag];
     // 已到终章的旧存档补齐照片；尚未排水的旧存档自然接入西翼。
-    if (this.flags.memory && this.flags.released && saved.revision !== 3) {
+    if (this.flags.memory && this.flags.released && (saved.revision ?? 2) < 3) {
       this.flags.photo = true; this.documents.add('14');
     }
     if (!this.flags.photo || !this.documents.has('14')) {
-      delete this.flags.photo; delete this.flags.released; delete this.flags.ended;
+      for (const flag of ['photo', 'generator', 'relay', 'released', 'ended']) delete this.flags[flag];
     }
+    if (this.flags.photo && this.flags.released && (saved.revision ?? 2) < 4) {
+      this.flags.generator = true; this.flags.relay = true; this.documents.add('23');
+    }
+    if (!this.flags.generator || !this.flags.relay || !this.documents.has('23')) {
+      if (!this.flags.generator || !this.documents.has('23')) delete this.flags.relay;
+      delete this.flags.released; delete this.flags.ended;
+    }
+    if (this.flags.photo) this.items.add('annexKey');
+    else { this.items.delete('annexKey'); this.items.delete('relayFuse'); }
+    if (this.flags.generator) this.items.delete('relayFuse');
     if (this.flags.memory) this.items.add('westKey');
     else for (const item of ['westKey', 'film', 'developer']) this.items.delete(item);
     if (this.flags.photo) { this.items.delete('film'); this.items.delete('developer'); }
@@ -262,7 +324,7 @@ export class Campaign {
     if (Number.isFinite(saved.elapsed)) this.elapsed = Math.max(0, saved.elapsed);
     const point = saved.checkpoint;
     if (point && [point.x, point.y, point.z].every(Number.isFinite) &&
-      point.x >= -30 && point.x <= 31 && point.z >= -9 && point.z <= 83 &&
+      point.x >= -30 && point.x <= 44 && point.z >= -9 && point.z <= 83 &&
       [-2.8, 0, 2.8, 5.6].includes(point.y)) this.checkpoint = { ...point };
     if (['remember', 'leave'].includes(saved.ending) && this.flags.ended) this.ending = saved.ending;
   }
@@ -272,6 +334,7 @@ export const INVENTORY_LABELS = {
   serviceKey: '地下维修间钥匙', fuse: '备用熔断器',
   valveHandle: '排水阀手轮', archiveKey: '203 放映室钥匙', tape: '七月十四日的录音带', exitKey: '防火门钥匙',
   westKey: '二楼西翼钥匙', film: '未冲洗的全家福底片', developer: '密封的显影液',
+  annexKey: '地下旧区钥匙', relayFuse: '旧区输出熔断器',
 };
 
 export const ENDINGS = {

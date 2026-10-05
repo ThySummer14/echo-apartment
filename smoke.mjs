@@ -162,7 +162,7 @@ level.updateDoors(0.016);
 const kd = level.doors.find((d) => d.label === '厨房的门');
 kd.target = 1;
 for (let i = 0; i < 200; i++) level.updateDoors(0.016);
-check('kitchen door opened', kd.angle > 1.5 && kd.collider === null);
+check('open kitchen door retains collision at its actual slab', kd.angle > 1.5 && kd.collider !== null);
 kd.target = 0;
 for (let i = 0; i < 200; i++) level.updateDoors(0.016);
 check('kitchen door closed again', kd.angle < 0.02 && kd.collider !== null);
@@ -448,6 +448,33 @@ for (const [name,x,z] of westRoute) {
 }
 check('all west rooms and puzzle surfaces are reachable through their doors',westOk);
 check('west wing returns to the actual second floor without dropping',Math.abs(p.y-2.8)<.05);
+
+console.log('[13] basement annex loop, puzzle approaches and return');
+p.x=13.3;p.y=-2.8;p.z=20.5;
+const annexRoute=[
+ ['old utility aisle',16.6,20.5],['old utility rear',16.6,26],['annex threshold',16.6,28.5],
+ ['annex gallery',16.6,31],['annex junction',24,31],['watch portal',24,38.8],['watch enter',20,38.8],
+ ['watch centre',17,38.8],['watch log',13.7,36.5],['watch return',17,38.8],
+ ['watch archive door',16.8,43.5],['archive threshold',16.8,45.6],['archive aisle',15.9,45.6],
+ ['archive middle',15.9,50],['fuse approach',20.3,49.8],['fuse cabinet bypass',19.3,49.8],
+ ['fuse cabinet return aisle',19.3,52.8],['archive portal approach',20.3,52.8],
+ ['archive corridor',24,52.8],['archive return portal',20.3,52.8],['archive east aisle',15.9,53.3],
+ ['archive chair bypass',15.9,54.4],['archive table side',13.7,54.4],['archive ledger',13.7,53.3],
+ ['archive table return',13.7,54.4],['archive aisle return',15.9,54.4],['archive south aisle',15.9,56.7],
+ ['radio hinge bypass',16.8,56.7],
+ ['radio doorway',16.8,58.3],['radio threshold',16.8,60.3],['radio approach',14.3,64],
+ ['radio side return',17,63.8],['radio portal',20.5,63.8],['radio corridor',24,63.8],
+ ['cistern corridor',24,56.8],['cistern entry',28.5,56.8],['cistern story wall',27.6,61],
+ ['cistern southwest',29,64.8],['cistern southeast',43.2,64.8],['cistern northeast',43.2,49.2],
+ ['cistern north aisle',34.8,49.2],['generator back entry',34.8,45.5],['generator side',34.8,41],
+ ['generator control approach',31.4,35.2],['generator gallery doorway',34.8,35],
+ ['generator gallery',34.8,31],['annex return',16.6,31],['old utility return',16.6,26],
+ ['old utility front return',16.6,20.5],['old basement return',13.3,20.5],
+];
+let annexOk=true;
+for(const [name,x,z] of annexRoute){const ok=walkTo({x,z});if(!ok)console.log('  FAIL annex route: '+name+' @ '+[p.x,p.y,p.z].map(v=>v.toFixed(2)).join(','));annexOk=ok&&annexOk;}
+check('new underground loop reaches all puzzle surfaces and returns through the real entrance',annexOk);
+check('annex remains on the basement slab throughout the loop',Math.abs(p.y+2.8)<.05);
 
 console.log('[11] geometry attributes and exit retrigger');
 let invalidAttributes = 0;

@@ -70,7 +70,8 @@ export function buildSwitchbackStair(level, options = {}) {
     const p = stairPoint(stair,u,v,bottom);
     const sideways = Math.abs(Math.sin(stair.rotation)) > .5;
     const hw = (sideways ? d : w) / 2, hd = (sideways ? w : d) / 2;
-    const collider = {x0:p.x-hw,x1:p.x+hw,z0:p.z-hd,z1:p.z+hd,y0:bottom,y1:bottom+h,stairPart:part};
+    const collider = {x0:p.x-hw,x1:p.x+hw,z0:p.z-hd,z1:p.z+hd,y0:bottom,y1:bottom+h,stairPart:part,
+      walkable: ['tread', 'floor-landing', 'half-landing'].includes(part)};
     level.colliders.push(collider); return collider;
   };
   const platform = (v,top,depth,part) => {

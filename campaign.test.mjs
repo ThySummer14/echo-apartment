@@ -25,6 +25,13 @@ const recovered = () => {
   return campaign;
 };
 
+const radioLinked = (campaign) => {
+  campaign.collectItem('relayFuse');
+  assert.equal(campaign.perform('generator', [1, 0, 2]).ok, true);
+  assert.equal(campaign.perform('radio', '1407').ok, true);
+  return campaign;
+};
+
 test('维修钥匙来自来信，物件重复调查不会重复计入记录', () => {
   const campaign = new Campaign();
   assert.match(campaign.objective, /信/);
@@ -88,7 +95,7 @@ test('八音盒接受完整旋律，错误音符不改变记忆状态', () => {
 });
 
 test('水闸与出口门需要正确顺序，不靠收集三张纸条直接解锁', () => {
-  const campaign = recovered();
+  const campaign = radioLinked(recovered());
   assert.equal(campaign.items.has('exitKey'), false);
   assert.equal(campaign.perform('valves', [0, 2, 1]).ok, false);
   campaign.collectItem('valveHandle');
@@ -100,14 +107,14 @@ test('水闸与出口门需要正确顺序，不靠收集三张纸条直接解�
 });
 
 test('完整真相是归来结局的前置，两个结局都可以完成', () => {
-  const campaign = recovered();
+  const campaign = radioLinked(recovered());
   campaign.collectItem('valveHandle');
   campaign.perform('valves', [0, 2, 1]);
   assert.equal(campaign.perform('ending', 'remember').ok, false);
   campaign.collectDocument(6);
   assert.equal(campaign.perform('ending', 'remember').ok, true);
   assert.equal(campaign.ending, 'remember');
-  const other = recovered(); other.collectItem('valveHandle'); other.perform('valves', [0, 2, 1]);
+  const other = radioLinked(recovered()); other.collectItem('valveHandle'); other.perform('valves', [0, 2, 1]);
   assert.equal(other.perform('ending', 'leave').ok, true);
   assert.equal(other.ending, 'leave');
 });
@@ -120,6 +127,7 @@ test('章节存档往返保留状态、线索、物品和安全出生点', () =>
   const loaded = new Campaign(snapshot);
   assert.deepEqual(loaded.snapshot(), snapshot);
   assert.equal(loaded.chapter, 4);
+  radioLinked(loaded);
   assert.equal(loaded.perform('valves', [0, 2, 1]).ok, true);
 });
 
@@ -146,11 +154,13 @@ test('西翼物品与冲洗不能跳过记忆，错误冲洗保留底片和显�
   assert.equal(campaign.items.has('developer'), false);
   assert.equal(campaign.collectItem('film'), false);
   assert.equal(campaign.perform('develop', [0, 2, 1, 3]).ok, false);
+  assert.equal(campaign.perform('valves', [0, 2, 1]).ok, false);
+  radioLinked(campaign);
   assert.equal(campaign.perform('valves', [0, 2, 1]).ok, true);
 });
 
 test('旧终章存档迁移，西翼检查点和演出记录持久化，伪造照片不能跳过排水前置', () => {
-  const campaign = recovered(); campaign.collectItem('valveHandle'); campaign.perform('valves', [0, 2, 1]);
+  const campaign = radioLinked(recovered()); campaign.collectItem('valveHandle'); campaign.perform('valves', [0, 2, 1]);
   const old = campaign.snapshot(); delete old.revision; delete old.flags.photo; old.documents = old.documents.filter(d => d !== '14');
   const migrated = new Campaign(old);
   assert.equal(migrated.flags.released, true); assert.equal(migrated.flags.photo, true);
@@ -207,4 +217,44 @@ test('西翼演出按区域触发一次，继续存档与返回区域不重复�
   game.campaign=new Campaign(campaign.snapshot());
   new AtmosphereDirector(game).update(2);
   assert.equal(shutters,1);assert.equal(saves,1);
+});
+
+test('旧区供电、呼叫和排水必须依次推进，错误操作不消耗熔断器', () => {
+  const early = powerOn();
+  assert.equal(early.collectItem('relayFuse'), false);
+  assert.equal(early.perform('generator', [1, 0, 2]).ok, false);
+  const campaign = recovered(); campaign.collectItem('valveHandle');
+  assert.equal(campaign.items.has('annexKey'), true);
+  assert.equal(campaign.perform('radio', '1407').ok, false);
+  assert.equal(campaign.perform('valves', [0, 2, 1]).ok, false);
+  assert.equal(campaign.perform('generator', [1, 0, 2]).ok, false);
+  campaign.collectItem('relayFuse');
+  assert.equal(campaign.perform('generator', [0, 1, 2]).ok, false);
+  assert.equal(campaign.items.has('relayFuse'), true);
+  assert.equal(campaign.perform('generator', [1, 0, 2]).ok, true);
+  assert.equal(campaign.items.has('relayFuse'), false);
+  assert.equal(campaign.collectItem('relayFuse'), false);
+  assert.equal(campaign.perform('radio', '0147').ok, false);
+  assert.equal(campaign.chapter, 4);
+  assert.equal(campaign.perform('radio', '1407').ok, true);
+  assert.equal(campaign.documents.has('23'), true);
+  assert.equal(campaign.chapter, 5);
+  assert.equal(campaign.perform('valves', [0, 2, 1]).ok, true);
+});
+
+test('3.0 未排水存档接入旧区，终章存档保留进度，4.0 不能伪造继电器', () => {
+  const old = recovered().snapshot(); old.revision = 3;
+  const partial = new Campaign(old);
+  assert.match(partial.objective, /地下旧区/);
+  assert.equal(partial.flags.relay, undefined);
+  old.flags.released = true; old.items.push('exitKey');
+  const migrated = new Campaign(old);
+  assert.equal(migrated.flags.relay, true);
+  assert.equal(migrated.flags.generator, true);
+  assert.equal(migrated.flags.released, true);
+  assert.equal(migrated.documents.has('23'), true);
+  const forged = migrated.snapshot(); forged.documents = forged.documents.filter(d => d !== '23');
+  assert.equal(new Campaign(forged).flags.released, undefined);
+  const current = radioLinked(recovered());
+  assert.deepEqual(new Campaign(current.snapshot()).snapshot(), current.snapshot());
 });
