@@ -91,3 +91,7 @@ Two old encounter markers occupied the kitchen table and bedroom futon after mod
 ## Raised-target regression
 
 A visible player standing on the 24 cm bedroom futon previously sent the hunter toward a distant staircase: the old elevation test interpreted any height difference above 15 cm as another floor. Reproduced this in a real-scene encounter test. Stair routing now requires a genuine landing height or a target physically within a stairwell. Ground navigation can choose a clear adjacent-floor approach to a low raised target instead of routing through furniture. The futon encounter and the existing no-relocation stair ascent/descent checks both pass.
+
+## Referenced bathroom fixture reconstruction
+
+Rebuilt the original bathroom cluster using primary manufacturer dimensional references, documented in `docs/references/BATHROOM-FIXTURES.md`. The bath, toilet and basin now have true open shells, connected/supporting parts, and separate conservative collision envelopes. Seven new tests verify footprint, cavity depth, openings, normal orientation, contact/support, plumbing connections and the front service aisle. The complete suite at this checkpoint passes 69 unit cases and 57 smoke assertions. No claim of WebGL visual acceptance is made.

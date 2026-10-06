@@ -101,6 +101,7 @@ npm run audit
 | `js/navigation.js` / `js/pursuit.js` | 有界地面寻路、门状态缓存、最后已知位置与脚步听觉 |
 | `js/atmosphere.js` | 区域演出、一次性事件、空间声音遮挡调度 |
 | `js/stairs.js` | 双跑折返楼梯、实体碰撞、平台接合与上下楼导航 |
+| `js/bathroom-fixtures.js` | 按真实产品尺寸重建浴缸、坐便器、洗手盆、淋浴管路与镜面安装 |
 | `js/models.js` | 微倒角几何、细节材质、灯具、门扇与楼梯间收口 |
 | `js/level.js` | 建筑壳体、住户家具、门、灯具、触发区域 |
 | `js/game.js` | 渲染、玩家移动、事件、追逐、交互和流程调度 |
@@ -110,7 +111,7 @@ npm run audit
 | `js/textures.js` / `js/audio.js` | Canvas 贴图与 WebAudio 声音 |
 | `css/game.css` / `index.html` | 标题、HUD、纸张、手册、设置等界面 |
 
-`campaign.test.mjs` 的 18 项用例检查主线前置、错误操作、物品消耗、两个结局、新旧存档、演出持久化和调查遮挡。`smoke.mjs` 构建全部场景，使用真实碰撞连续走过住户区、B1、两层折返梯、屋顶、东翼、西翼和地下旧区后返回，同时检查平台支撑、楼梯净空、半途返回及怪物上下楼。`traversal.test.mjs` 的 17 项用例覆盖高速薄墙、房间与屋顶封边、异常恢复、四层可达地板探索、相邻墙夹角、平开门和拉门防挤压。`performance.test.mjs` 的 3 项用例检查真实帧时采样、降级冷却和质量恢复；`pursuit.test.mjs` 的 4 项用例检查最后已知位置、脚步声衰减与失去目标。`input-state.test.mjs` 的 4 项用例检查触屏输入清理、调查/暂停叠层和重复谜题操作。`navigation.test.mjs` 与 `navigation-world.test.mjs` 的 16 项用例检查绕障、锁门、换房目标、不可达缓存、计算预算和实际街区追踪路线。`debug-audit.mjs` 检查墙体穿透、意外边缘坠落与怪物节点支撑；装饰几何相交的报告需要结合实体结构判断。
+`campaign.test.mjs` 的 18 项用例检查主线前置、错误操作、物品消耗、两个结局、新旧存档、演出持久化和调查遮挡。`smoke.mjs` 构建全部场景，使用真实碰撞连续走过住户区、B1、两层折返梯、屋顶、东翼、西翼和地下旧区后返回，同时检查平台支撑、楼梯净空、半途返回及怪物上下楼。`traversal.test.mjs` 的 17 项用例覆盖高速薄墙、房间与屋顶封边、异常恢复、四层可达地板探索、相邻墙夹角、平开门和拉门防挤压。`performance.test.mjs` 的 3 项用例检查真实帧时采样、降级冷却和质量恢复；`pursuit.test.mjs` 的 4 项用例检查最后已知位置、脚步声衰减与失去目标。`input-state.test.mjs` 的 4 项用例检查触屏输入清理、调查/暂停叠层和重复谜题操作。`navigation.test.mjs` 与 `navigation-world.test.mjs` 的 16 项用例检查绕障、锁门、换房目标、不可达缓存、计算预算和实际街区追踪路线。`bathroom-fixtures.test.mjs` 的 7 项用例检查真实尺寸、空腔、支撑、排水口、管路连接和碰撞净空；尺寸来源见 [浴室建模依据](docs/references/BATHROOM-FIXTURES.md)。`debug-audit.mjs` 检查墙体穿透、意外边缘坠落与怪物节点支撑；装饰几何相交的报告需要结合实体结构判断。
 
 构建会为脚本和 CSS 写入内容版本，避免静态浏览器缓存旧游戏。
 

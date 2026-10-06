@@ -2,6 +2,7 @@
 // props, pickups and trigger zones. All coordinates in meters.
 // North = -x, South = +x, East = +z.
 import * as THREE from '../vendor/three.module.js';
+import { buildBathroomFixtures } from './bathroom-fixtures.js';
 import { beveledBoxGeometry, detailMaterials, doorDetails } from './models.js';
 import { createTextures } from './textures.js';
 import { buildCampaignWorld } from './campaign-world.js';
@@ -1212,26 +1213,7 @@ export class Level {
     this.box(-12.5, 11.4, 0, 0.5, 0.5, 0.09, stdMat({ color: 0x5a3a3a, roughness: 0.95 }), { geo: { ao: 'none' } });
 
     // ---------- bathroom ----------
-    this.box(-15.8, 20.25, 0, 1.4, 0.55, 0.6, M.rust, { geo: { ao: 'wall' } });   // tub shell
-    this.box(-15.8, 20.25, 0.3, 1.25, 0.4, 0.02, M.waterDark, { geo: { ao: 'none' } }); // dark water
-    this.box(-15.8, 19.86, 0, 1.5, 0.08, 0.62, M.darkMetal, { geo: { ao: 'none' } });   // rim
-    this.box(-16.7, 15.25, 1.45, 0.06, 0.6, 0.55, M.darkMetal, { geo: { ao: 'none' } }); // mirror (NW corner)
-    this.box(-16.9, 17.2, 1.9, 0.14, 0.14, 0.1, M.darkMetal, { geo: { ao: 'none' } }); // shower head
-    // tub faucet — must stand ON the tub rim (top 0.62); it used to float at
-    // y≈1.25 in mid-air, 0.6m above the tub
-    const tubTap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.35, 6), M.darkMetal);
-    tubTap.position.set(-15.6, 0.8, 20.25);
-    const tubSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.22, 6), M.darkMetal);
-    tubSpout.rotation.x = Math.PI / 2;
-    tubSpout.position.set(-15.6, 0.97, 20.05);
-    this.scene.add(tubTap, tubSpout);
-    // toilet
-    this.box(-14.55, 16.85, 0, 0.4, 0.55, 0.42, M.whiteMetal, { geo: { ao: 'wall' } }); // cistern
-    this.box(-14.55, 16.4, 0, 0.4, 0.48, 0.4, M.whiteMetal, { geo: { ao: 'wall' } });    // bowl
-    this.box(-14.55, 16.4, 0.4, 0.42, 0.5, 0.04, M.whiteMetal, { geo: { ao: 'none' } }); // seat
-    // sink
-    this.box(-16.55, 15.35, 0, 0.55, 0.5, 0.8, M.whiteMetal, { geo: { ao: 'wall' } });
-    this.box(-16.55, 15.35, 0.8, 0.6, 0.55, 0.05, M.whiteMetal, { geo: { ao: 'none' } });
+    buildBathroomFixtures(this);
     // Hollow medicine cabinet. Both its carcass and open door remain fully
     // on the bathroom side of x=-13.9; the mirror is inset into its door frame.
     const medicineParts=[];
