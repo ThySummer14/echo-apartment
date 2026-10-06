@@ -1,3 +1,4 @@
+import { safeRoom104Checkpoint } from './room104-layout.js';
 import { bindTouchButton } from './mobile-panels.js';
 // game.js — main loop: renderer + post FX, player controller, interactions,
 // event director, monster AI glue, scares, UI flow.
@@ -906,6 +907,11 @@ class Game {
   }
 
   _wakeAtCheckpoint(p = this.campaign.checkpoint) {
+    const migrated=safeRoom104Checkpoint(p,this.level.colliders);
+    if(migrated!==p){
+      p=migrated;this.campaign.checkpoint={...p};
+      try { localStorage.setItem(SAVE_KEY,JSON.stringify(this.campaign.snapshot())); } catch {}
+    }
     this._clearMovementInput();
     this.playerPos.set(p.x, p.y, p.z);
     this.char = aabbFromSphere(p.x, p.y, p.z, PLAYER_R, PLAYER_H);

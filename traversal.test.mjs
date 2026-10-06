@@ -314,7 +314,7 @@ test('电话从冰箱背后移到可步行接近、无遮挡的同一交互物�
 
 test('洗衣房对面的104与入口大厅都有连续可见地板网格',()=>{
  level.scene.updateMatrixWorld(true);const floors=[];level.scene.traverse(o=>{if(o.isMesh&&o.userData.collider?.walkable&&Math.abs(o.userData.collider.y1)<.001)floors.push(o);});
- let samples=0;for(const[x0,x1,z0,z1]of[[7.3,18.2,46.3,55.7],[-4.7,4.7,-8.7,-2.3]])for(let x=x0;x<=x1;x+=.65)for(let z=z0;z<=z1;z+=.65){
+ let samples=0;for(const[x0,x1,z0,z1]of[[7.3,13.7,46.3,51.7],[-4.7,4.7,-8.7,-2.3]])for(let x=x0;x<=x1;x+=.65)for(let z=z0;z<=z1;z+=.65){
   const hits=new THREE.Raycaster(new THREE.Vector3(x,1,z),new THREE.Vector3(0,-1,0)).intersectObjects(floors);assert.ok(hits.length,'missing floor at '+[x,z]);assert.ok(hits[0].object.visible);assert.ok(Math.abs(hits[0].point.y)<.001);samples++;
  }
  console.log('  Reported-room floor samples:',samples);
@@ -324,9 +324,9 @@ test('洗衣房对面的104与入口大厅都有连续可见地板网格',()=>{
 test('104床垫不再被30厘米踏步高度吞没，床边通路仍可连续行走',()=>{
  level.scene.updateMatrixWorld(true);const bed=level.campaign.bed104,bounds=new THREE.Box3().setFromObject(bed.mattress),solid=bed.frame.userData.collider;
  assert.ok(Math.abs(solid.y1-bounds.max.y)<1e-6);
- const c=body(15.8,0,50);for(let i=0;i<40;i++)moveWithCollisions(c,0,-.03,.05,colliders,.35);
- assert.ok(Math.abs(c.y0)<.001);assert.ok(c.z1<=solid.z0+.002,'walked into or onto the mattress without clearing its height');
- const route=body(15.8,0,50);for(const[x,z]of[[14.4,50],[14.4,54],[15.8,54]]){
+ const c=body(11.2,0,49.85);for(let i=0;i<40;i++)moveWithCollisions(c,.05,-.03,0,colliders,.35);
+ assert.ok(Math.abs(c.y0)<.001);assert.ok(c.x1<=solid.x0+.002,'walked into or onto the mattress without clearing its height');
+ const route=body(11.2,0,49.85);for(const[x,z]of[[10.95,49.85],[10.95,50.3],[9.4,49.65]]){
   let reached=false;for(let i=0;i<160;i++){const p=point(route),d=Math.hypot(x-p.x,z-p.z);if(d<.07){reached=true;break;}const step=Math.min(.05,d);moveWithCollisions(route,(x-p.x)/d*step,-.03,(z-p.z)/d*step,colliders,.35);assert.ok(Math.abs(route.y0)<.001);}
   assert.ok(reached,'bed-side route blocked');
  }

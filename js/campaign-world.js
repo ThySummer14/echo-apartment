@@ -1,3 +1,4 @@
+import { ROOM104 } from './room104-layout.js';
 import * as THREE from '../vendor/three.module.js';
 import { stdMat, basicMat, boxAABB, mulberry32 } from './util.js';
 import { buildSwitchbackStair } from './stairs.js';
@@ -16,7 +17,7 @@ export const WORLD_AREAS = [
   { name: '一楼走廊', floor: 0, bounds: [-1.9, 1.8, 1.9, 61.7] },
   { name: '东翼走廊', floor: 0, bounds: [1.9, 42, 31, 46] },
   { name: '公共洗衣房', floor: 0, bounds: [7, 32, 17.5, 42] },
-  { name: '104 空屋', floor: 0, bounds: [7, 46, 18.5, 56] },
+  { name: '104 空屋', floor: 0, bounds: ROOM104.bounds },
   { name: '管理员维修室', floor: 0, bounds: [19, 32, 31, 42] },
   { name: '厨房', floor: 0, bounds: [-8.4, 0, -1.7, 7.5] },
   { name: '客厅', floor: 0, bounds: [-8.4, 7.5, -1.7, 15.5] },
@@ -284,7 +285,12 @@ export function buildCampaignWorld(level) {
     gaps: { n: [[9, 10.5], [23, 24.5]], s: [[10, 11.5]] } });
   level.room(7, 17.5, 32, 42, { s: false, wallMat: M.concrete, floorMat: M.tile });
   level.room(19, 31, 32, 42, { s: false, wallMat: M.concrete, floorMat: M.concrete });
-  level.room(7, 18.5, 46, 56, { n: false, wallMat: M.wallpaper, floorMat: M.woodFloor });
+  level.room(7, 14, 46, 52, { n: false, wallMat: M.wallpaper, floorMat: M.woodFloor });
+  // 42m² whole-unit greybox: entry/service strip, living/study, bedroom.
+  // North wall is still the original shared corridor wall; never duplicate it.
+  level.wallZ(48.8,10.1,14,0,2.7,M.plaster);
+  level.wallX(10.1,48.8,52,0,2.7,M.plaster,[[49,50.3]]);
+  level.wallX(11.8,46,48.8,0,2.7,M.plaster,[[46.7,47.9]]);
   level.makeDoor({ x: 9, z: 42, along: 'x', width: 1.5, dir: 1, label: '公共洗衣房' });
   world.doors.workshop = level.makeDoor({ x: 23, z: 42, along: 'x', width: 1.5, dir: 1,
     label: '管理员维修室', mat: grey, locked: true, lockedMsg: '维修室磁锁没有电。先接通地下备用电源。' });
@@ -356,21 +362,21 @@ export function buildCampaignWorld(level) {
   level._battery(27.8, 38.2, 0.05);
 
   // 空屋的生活痕迹和独立调查记录，让支路提供信息与补给。
-  const bedFrame104=box(15.8,52.2,0,1.85,2.7,.3,M.darkWood,true);
-  const mattress104=box(15.8,52.2,.3,1.7,2.5,.13,M.quilt);
+  const bedFrame104=box(12.75,50.25,0,1.85,2.7,.3,M.darkWood,true);
+  const mattress104=box(12.75,50.25,.3,1.7,2.5,.13,M.quilt);
   // The visible mattress is part of the bed's collision envelope. A 30 cm
   // frame-only collider let automatic stepping place feet 13 cm inside it.
   bedFrame104.userData.collider.y1=.43;
   world.bed104={frame:bedFrame104,mattress:mattress104};
-  desk(9, 54.7, 0, 1.65); chair(9, 53.7, 0);
-  box(9.2, 54.7, 0.81, 0.32, 0.23, 0.07, M.black);
-  recordDocument(12, 8.5, 54.7, 0.803, '104 住户日记');
-  closet(17.2, 47.2, 0);
-  box(12.3, 50.3, 0.015, 3.0, 3.7, 0.018, M.rug);
-  lamp(12, 50, 2.5, 0xc19e75, 2.8, true);
-  level._window(18.36, 50.5, 1.45, 'w', { w: 1.8, h: 1.35 });
+  desk(8.15, 51.45, 0, 1.65); chair(8.15, 50.45, 0);
+  box(8.35, 51.45, 0.81, 0.32, 0.23, 0.07, M.black);
+  recordDocument(12, 7.65, 51.45, 0.803, '104 住户日记');
+  closet(10.95, 51.45, 0);
+  box(8.7, 48.8, 0.015, 2.3, 2.0, 0.018, M.rug);
+  lamp(9.4, 49, 2.5, 0xc19e75, 2.8, true);
+  level._window(13.86, 50.5, 1.45, 'w', { w: 1.8, h: 1.35 });
   level._battery(8.7, 48.4, 0.05);
-  for (const [x, z] of [[5, 44], [12, 44], [21, 44], [28.5, 44], [11, 36.5], [24, 37], [12, 49]])
+  for (const [x, z] of [[5, 44], [12, 44], [21, 44], [28.5, 44], [11, 36.5], [24, 37], [9.4, 49], [10.95, 50]])
     level.monsterNodes.push({ x, y: 0, z });
 
   // 地下维修梯采用同样的双跑折返结构，楼层平台直接贴合维修门。

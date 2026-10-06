@@ -439,8 +439,10 @@ const sceneRoute = [
   ...flightRoute(mainStair, -1), ['ground floor return landing', 0, 62.5], ['east corridor entrance', 0, 44],
   ['east wing entry', 4.5, 44], ['laundry doorway', 9.75, 44], ['laundry enter', 9.75, 40.9],
   ['laundry machines', 11.5, 35.5], ['laundry side aisle', 12.4, 40.9], ['laundry return', 9.75, 40.9], ['laundry corridor', 9.75, 44],
-  ['104 doorway', 10.75, 44], ['104 entry', 10.75, 47.3], ['104 desk approach', 9, 52.4],
-  ['104 return', 10.75, 47.3], ['east hallway return', 10.75, 44], ['workshop doorway', 23.75, 44],
+  ['104 doorway',10.75,44],['104 entry',10.75,48.15],['104 living entry',9.3,48.15],
+  ['104 desk aisle',9.3,50.7],['104 desk approach',8.85,50.65],['104 desk return',9.3,50.7],
+  ['104 bedroom approach',9.3,49.65],['104 bedroom entry',10.95,49.65],['104 wardrobe',10.95,50.3],
+  ['104 bedroom return',10.95,49.65],['104 living return',9.3,49.65],['104 foyer return',9.3,48.15],['104 return',10.75,48.15], ['east hallway return', 10.75, 44], ['workshop doorway', 23.75, 44],
   ['workshop entry', 23.75, 40.9], ['workshop handwheel approach', 24.2, 35.2],
   ['workshop return', 23.75, 40.9], ['east corridor return', 23.75, 44], ['main hall return', 0, 44],
 ];
