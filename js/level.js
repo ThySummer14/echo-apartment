@@ -1008,8 +1008,9 @@ export class Level {
     }
     // wall phone — moved off the south wall: the old spot (x=-6.9, z=7.36)
     // was INSIDE the wall cabinet (x -7.8..-5.4, z 6.94..7.56, y 1.6..2.22).
-    // Hang it on the kitchen's west wall (inner face x=-8.3) at a clear spot.
-    const phone = this.box(-8.22, 3.2, 1.45, 0.16, 0.1, 0.24, stdMat({ color: 0x3d4a42, roughness: 0.6 }), { geo: { ao: 'none' }, collide: false });
+    // The former west-wall z=3.2 position was still hidden behind the fridge.
+    // z=4.0 clears its z=2.425..3.275 footprint and keeps the same interaction mesh.
+    const phone = this.box(-8.22, 4.0, 1.45, 0.16, 0.1, 0.24, stdMat({ color: 0x3d4a42, roughness: 0.6 }), { geo: { ao: 'none' }, collide: false });
     this.props.phone = phone;
     this.regInteractable(phone, '电话', 2.0, () => this.handlers.onPhone?.());
     // newspapers

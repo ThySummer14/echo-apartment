@@ -1,3 +1,4 @@
+import { bindMobilePanels } from './mobile-panels.js';
 import { Campaign, DOCUMENTS, INVENTORY_LABELS, CHAPTERS, SAVE_KEY } from './campaign.js';
 import { WORLD_AREAS } from './campaign-world.js';
 
@@ -98,6 +99,7 @@ export class InvestigationUI {
     $('ending-remember').addEventListener('click', () => game._ending('remember'));
     $('ending-leave').addEventListener('click', () => game._ending('leave'));
     this.bindSettings();
+    if (game.touchMode) bindMobilePanels();
   }
 
   bindSettings() {
@@ -379,7 +381,9 @@ export class InvestigationUI {
       keypad.appendChild(button);
     });
     this.renderSequence();
-    if (coded) $('puzzle-code').focus();
+    $('puzzle-code').inputMode = this.game.touchMode ? 'none' : 'numeric';
+    $('puzzle-scroll').scrollTop = 0;
+    if (coded && !this.game.touchMode) $('puzzle-code').focus();
     else $('puzzle-close').focus();
   }
 

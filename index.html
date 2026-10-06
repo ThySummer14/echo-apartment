@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>回声公寓 · 残響アパート</title>
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./css/game.css?v=41c804fc4c">
+  <link rel="stylesheet" href="./css/game.css?v=2096334fac">
 </head>
 <body>
   <canvas id="game" aria-label="回声公寓三维游戏场景"></canvas>
@@ -91,10 +91,13 @@
 
   <div id="puzzle" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="puzzle-title">
     <section class="puzzle-shell"><button id="puzzle-close" class="close" aria-label="停止调查">×</button>
+      <div class="mobile-scroll-tools"><span>点按解谜 · 滑动查看</span><button type="button" data-puzzle-scroll="-1" aria-label="向上翻页">上翻</button><button type="button" data-puzzle-scroll="1" aria-label="向下翻页">下翻</button></div>
+      <div id="puzzle-scroll" class="puzzle-scroll">
       <p class="panel-kicker">调查物件</p><h2 id="puzzle-title"></h2><p id="puzzle-description"></p>
       <div id="puzzle-controls"></div><div id="puzzle-sequence"></div>
       <input id="puzzle-code" class="hidden" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="四位数密码">
       <div id="puzzle-keypad" class="hidden"></div><p id="puzzle-status" role="status"></p>
+      </div>
       <div class="puzzle-actions"><button id="puzzle-submit" class="primary">确认操作</button><button id="puzzle-reset" class="text-button">重置</button><button id="puzzle-hint" class="text-button">查看线索</button></div>
     </section>
   </div>
@@ -131,6 +134,6 @@
   <div id="end" class="screen hidden"><p id="end-label"></p><h1 id="end-title"></h1><div id="end-text"></div><p id="end-stats"></p><button id="end-again" class="primary">再次走进公寓</button></div>
   <div id="fade" aria-hidden="true"></div>
   <div id="error" class="screen hidden"><h2>无法进入公寓</h2><p>渲染器初始化失败，请使用支持 WebGL 的浏览器。</p><button id="error-retry" class="primary">重新加载</button></div>
-  <script src="./js/bundle.js?v=65ccc1dffa"></script>
+  <script src="./js/bundle.js?v=d852b65c63"></script>
 </body>
 </html>

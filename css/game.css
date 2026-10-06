@@ -327,3 +327,17 @@ html.forced #end { padding: 20px; }
 html.forced #end h1 { font-size: 38px; margin-bottom: 15px; }
 html.forced #end-label { margin-bottom: 14px; }
 html.forced #end-text { font-size: 12px; line-height: 1.7; }
+
+/* Mobile panels own their gestures, including the 90-degree stage transform. */
+.mobile-scroll-tools { display:none; }
+body.touch-panels .modal, body.touch-panels #note, body.touch-panels #end,
+body.touch-panels .modal *, body.touch-panels #note * { touch-action:none; }
+body.touch .puzzle-shell { display:flex; flex-direction:column; height:min(700px,92vh); overflow:hidden; }
+body.touch .puzzle-scroll { min-height:0; overflow:auto; flex:1; padding-right:6px; }
+body.touch .mobile-scroll-tools { display:flex; flex-shrink:0; align-items:center; gap:8px; padding-right:32px; margin-bottom:8px; }
+.mobile-scroll-tools span { flex:1; font-size:11px; color:var(--muted); }
+.mobile-scroll-tools button { min-height:44px; min-width:44px; border:1px solid var(--line); font-size:12px; }
+body.touch .puzzle-actions { flex-shrink:0; padding-top:12px; border-top:1px solid var(--line); gap:10px; }
+body.touch .puzzle-actions button, body.touch #puzzle-keypad button { min-height:44px; }
+body.touch input[type="range"] { height:32px; }
+html.forced body.touch .puzzle-shell { height:min(700px,94vw); }

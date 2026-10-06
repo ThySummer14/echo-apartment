@@ -300,3 +300,22 @@ test('客厅茶几的桌面位于四条腿上，而不是倒置在地面',()=>{
   assert.ok(Math.abs(b.min.y)<.015);assert.ok(Math.abs(b.max.y-top.min.y)<.02);
  }
 });
+
+test('电话从冰箱背后移到可步行接近、无遮挡的同一交互物件上',()=>{
+ const c=body(-2.3,0,3.6);
+ for(const[x,z]of[[-3.7,3.6],[-3.7,2.3],[-6.8,2.3],[-6.8,4],[-7.4,4]]){
+  let reached=false;for(let i=0;i<400;i++){const p=point(c),d=Math.hypot(x-p.x,z-p.z);if(d<.06){reached=true;break;}const step=Math.min(.05,d);moveWithCollisions(c,(x-p.x)/d*step,-.03,(z-p.z)/d*step,colliders,.35);assert.ok(Math.abs(c.y0)<.001);}
+  assert.ok(reached,'phone approach blocked on '+[x,z]+' at '+JSON.stringify(point(c)));
+ }
+ level.scene.updateMatrixWorld(true);const phone=level.props.phone,target=interactionWorldPosition(phone),origin=new THREE.Vector3(point(c).x,1.62,point(c).z);
+ const interaction=level.interactables.find(i=>i.mesh===phone);assert.ok(interaction);assert.ok(origin.distanceTo(target)<interaction.dist);assert.equal(interactionBlocked(origin,target,level.colliders,level.doors),false);
+ const ray=new THREE.Raycaster(origin,target.clone().sub(origin).normalize());assert.ok(ray.intersectObject(phone).length>0);let called=0;level.handlers.onPhone=()=>called++;interaction.action();assert.equal(called,1);
+});
+
+test('洗衣房对面的104与入口大厅都有连续可见地板网格',()=>{
+ level.scene.updateMatrixWorld(true);const floors=[];level.scene.traverse(o=>{if(o.isMesh&&o.userData.collider?.walkable&&Math.abs(o.userData.collider.y1)<.001)floors.push(o);});
+ let samples=0;for(const[x0,x1,z0,z1]of[[7.3,18.2,46.3,55.7],[-4.7,4.7,-8.7,-2.3]])for(let x=x0;x<=x1;x+=.65)for(let z=z0;z<=z1;z+=.65){
+  const hits=new THREE.Raycaster(new THREE.Vector3(x,1,z),new THREE.Vector3(0,-1,0)).intersectObjects(floors);assert.ok(hits.length,'missing floor at '+[x,z]);assert.ok(hits[0].object.visible);assert.ok(Math.abs(hits[0].point.y)<.001);samples++;
+ }
+ console.log('  Reported-room floor samples:',samples);
+});

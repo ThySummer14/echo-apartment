@@ -1,3 +1,4 @@
+import { bindTouchButton } from './mobile-panels.js';
 // game.js — main loop: renderer + post FX, player controller, interactions,
 // event director, monster AI glue, scares, UI flow.
 import * as THREE from '../vendor/three.module.js';
@@ -710,7 +711,7 @@ class Game {
     // joystick sit above it and never reach here)
     const canLook = () => this.state === 'playing' && !this.noteOpen && $('pause').classList.contains('hidden');
     this.canvas.addEventListener('touchstart', (e) => {
-      if (this._lookId !== null) return;
+      if (!canLook() || this._lookId !== null) return;
       const t = e.changedTouches[0];
       this._lookId = t.identifier;
       this._lookLX = t.clientX;
@@ -741,10 +742,7 @@ class Game {
     }
 
     // ---- buttons
-    const tap = (el, fn) => {
-      el.addEventListener('touchend', (e) => { e.preventDefault(); fn(); }, { passive: false });
-      el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-    };
+    const tap = bindTouchButton;
     tap(btnI, () => {
       if (this.noteOpen) { this._closeNote(); return; }
       if (this.state === 'playing') this._interact();
