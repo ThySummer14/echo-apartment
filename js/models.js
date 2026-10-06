@@ -1,3 +1,4 @@
+import { batchFixtureHardware } from './fixture-batching.js';
 import * as THREE from '../vendor/three.module.js';
 import { mulberry32 } from './util.js';
 
@@ -66,6 +67,7 @@ export function fixtureDetails(level,x,y,z,colour,parent=level.scene) {
       screw.position.set(side*.335,-.079,dz);group.add(screw);
     }
   }
+  batchFixtureHardware(group,diffuser,level.batchStaticFixtures!==false);
   return {group,diffuser};
 }
 

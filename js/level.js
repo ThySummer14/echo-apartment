@@ -16,9 +16,10 @@ const DOOR_H = 2.05;     // door height
 const DOOR_W = 1.16;     // door width
 
 export class Level {
-  constructor(scene, handlers = {}) {
+  constructor(scene, handlers = {}, options = {}) {
     this.scene = scene;
     this.handlers = handlers;
+    this.batchStaticFixtures = options.batchStaticFixtures !== false;
     this.tex = createTextures();
     this.rng = mulberry32(20260814);
 

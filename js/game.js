@@ -398,7 +398,7 @@ class Game {
       zone_corridorMid: () => this._zoneCorridorMid(),
       zone_stairsEast: () => this._zoneStairs(),
       zone_exitVoid: () => this._zoneExitVoid(),
-    });
+    }, { batchStaticFixtures: new URLSearchParams(location.search).get('fixtureBatching') !== '0' });
     this.colliders = this.level.colliders;
     // precompute Box3s for the line-of-sight interaction check (static set)
     this._losBoxes = this.level.colliders.map((c) => new THREE.Box3(
