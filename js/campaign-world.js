@@ -356,8 +356,12 @@ export function buildCampaignWorld(level) {
   level._battery(27.8, 38.2, 0.05);
 
   // 空屋的生活痕迹和独立调查记录，让支路提供信息与补给。
-  box(15.8, 52.2, 0, 1.85, 2.7, 0.3, M.darkWood, true);
-  box(15.8, 52.2, 0.3, 1.7, 2.5, 0.13, M.quilt);
+  const bedFrame104=box(15.8,52.2,0,1.85,2.7,.3,M.darkWood,true);
+  const mattress104=box(15.8,52.2,.3,1.7,2.5,.13,M.quilt);
+  // The visible mattress is part of the bed's collision envelope. A 30 cm
+  // frame-only collider let automatic stepping place feet 13 cm inside it.
+  bedFrame104.userData.collider.y1=.43;
+  world.bed104={frame:bedFrame104,mattress:mattress104};
   desk(9, 54.7, 0, 1.65); chair(9, 53.7, 0);
   box(9.2, 54.7, 0.81, 0.32, 0.23, 0.07, M.black);
   recordDocument(12, 8.5, 54.7, 0.803, '104 住户日记');

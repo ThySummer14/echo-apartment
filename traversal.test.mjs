@@ -319,3 +319,15 @@ test('洗衣房对面的104与入口大厅都有连续可见地板网格',()=>{
  }
  console.log('  Reported-room floor samples:',samples);
 });
+
+
+test('104床垫不再被30厘米踏步高度吞没，床边通路仍可连续行走',()=>{
+ level.scene.updateMatrixWorld(true);const bed=level.campaign.bed104,bounds=new THREE.Box3().setFromObject(bed.mattress),solid=bed.frame.userData.collider;
+ assert.ok(Math.abs(solid.y1-bounds.max.y)<1e-6);
+ const c=body(15.8,0,50);for(let i=0;i<40;i++)moveWithCollisions(c,0,-.03,.05,colliders,.35);
+ assert.ok(Math.abs(c.y0)<.001);assert.ok(c.z1<=solid.z0+.002,'walked into or onto the mattress without clearing its height');
+ const route=body(15.8,0,50);for(const[x,z]of[[14.4,50],[14.4,54],[15.8,54]]){
+  let reached=false;for(let i=0;i<160;i++){const p=point(route),d=Math.hypot(x-p.x,z-p.z);if(d<.07){reached=true;break;}const step=Math.min(.05,d);moveWithCollisions(route,(x-p.x)/d*step,-.03,(z-p.z)/d*step,colliders,.35);assert.ok(Math.abs(route.y0)<.001);}
+  assert.ok(reached,'bed-side route blocked');
+ }
+});

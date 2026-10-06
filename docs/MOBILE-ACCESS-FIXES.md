@@ -19,3 +19,11 @@ The room opposite the public laundry maps to 104. A 405-point raycast audit find
 ## Verification limits
 
 Event-sequence tests exercise rotated/unrotated swipes, nested scrolling, cancellation, multitouch, sliders, paging and accidental-click rejection. All seven puzzles complete through the actual UI handlers and campaign rules; wrong input still fails, and successful progress survives save restoration. These are DOM-event fixtures and source/geometry checks, not a native mobile browser or WebGL playthrough. The shared cloud browser's WebGL limitation remains.
+
+## 104 bed collision follow-up
+
+A continuous walking reproduction reached the bed with feet at 0.30 m while its mattress surface is 0.43 m. The frame-only collision box therefore allowed 13 cm of visible penetration. The collision envelope now includes the mattress height. A regression checks that a grounded player cannot step into it and can still walk continuously around the bed.
+
+Additional entry-camera ray checks found opaque, visible, inward-facing side walls and ceilings in 104 and the entrance hall. The offline views use flat texture proxies, so they cannot settle the user's blank-material/appearance report. The initial forward camera sees the vestibule door; the reception desk, mailboxes and bench are mostly behind or beside that view. The blank-area report remains open pending matching visual evidence.
+
+Revalidated on the published static-fixture batching release (`e135d58d`): the bed-only source change retains batching, touch puzzle controls and 70–500% brightness. The full suite passes 93 unit cases and 57 smoke assertions, including the continuous approach and bed-side route. This fixes the measured collision defect only; the reported blank appearance remains open.
