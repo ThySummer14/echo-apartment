@@ -105,7 +105,7 @@ export class InvestigationUI {
     try { settings = JSON.parse(localStorage.getItem('echo_settings_v2') || '{}') || {}; } catch {}
     this.settings = {
       volume: Number.isFinite(settings.volume) ? Math.max(0, Math.min(100, settings.volume)) : 70,
-      brightness: Number.isFinite(settings.brightness) ? Math.max(70, Math.min(150, settings.brightness)) : 100,
+      brightness: Number.isFinite(settings.brightness) ? Math.max(70, Math.min(500, settings.brightness)) : 100,
       reduced: settings.reduced === true,
     };
     const apply = () => {
@@ -115,15 +115,25 @@ export class InvestigationUI {
       document.body.classList.toggle('reduced-effects', this.settings.reduced);
       try { localStorage.setItem('echo_settings_v2', JSON.stringify(this.settings)); } catch {}
     };
+    const syncValue = (name, value) => {
+      const fallback = name === 'brightness' ? 100 : 70;
+      const min = name === 'brightness' ? 70 : 0;
+      const max = name === 'brightness' ? 500 : 100;
+      this.settings[name] = Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+      $('setting-' + name).value = this.settings[name];
+      $('value-' + name).textContent = this.settings[name] + '%' +
+        (name === 'brightness' && this.settings[name] > 150 ? '（测试增亮）' : '');
+    };
     for (const name of ['volume', 'brightness']) {
       const input = $('setting-' + name);
-      input.value = this.settings[name];
-      $('value-' + name).textContent = this.settings[name] + '%';
-      input.addEventListener('input', () => {
-        this.settings[name] = Number(input.value);
-        $('value-' + name).textContent = input.value + '%'; apply();
-      });
+      syncValue(name, this.settings[name]);
+      const update = () => { syncValue(name, Number(input.value)); apply(); };
+      input.addEventListener('input', update);
+      input.addEventListener('change', update);
     }
+    $('reset-brightness').addEventListener('click', () => {
+      syncValue('brightness', 100); apply();
+    });
     $('setting-reduced').checked = this.settings.reduced;
     $('setting-reduced').addEventListener('change', (event) => {
       this.settings.reduced = event.target.checked; apply();

@@ -112,7 +112,9 @@
     <section class="settings-shell"><p class="panel-kicker">回声公寓</p><h2 id="pause-heading">暂停</h2>
       <div class="setting-row sensbox" id="sensbox"><label for="sens">视角灵敏度 <span id="sensval">14</span></label><input type="range" id="sens" min="4" max="40" step="1" value="14"></div>
       <div class="setting-row"><label for="setting-volume">音量 <span id="value-volume">70%</span></label><input id="setting-volume" type="range" min="0" max="100" value="70"></div>
-      <div class="setting-row"><label for="setting-brightness">亮度 <span id="value-brightness">100%</span></label><input id="setting-brightness" type="range" min="70" max="150" value="100"></div>
+      <div class="setting-row"><label for="setting-brightness">亮度 <span id="value-brightness">100%</span></label><input id="setting-brightness" type="range" min="70" max="500" step="1" value="100" aria-describedby="brightness-help"></div>
+      <p id="brightness-help" class="settings-controls">默认 100%；超过 150% 用于检查场景，可能冲淡暗部与高光。</p>
+      <button id="reset-brightness" type="button" class="text-button">恢复默认亮度（100%）</button>
       <label class="setting-check"><input id="setting-reduced" type="checkbox"><span>降低闪烁与镜头畸变<small>保留调查、谜题与追逐</small></span></label>
       <p class="settings-controls">WASD 移动 · SHIFT 奔跑 · E 调查<br>F 手电 · J 手册 · M 地图 · ESC 暂停<br>触控板可按住拖动视角</p>
       <button id="resume-game" class="primary">继续探索</button><button id="checkpoint-retry" class="text-button">回到当前章节节点</button>
@@ -129,6 +131,6 @@
   <div id="end" class="screen hidden"><p id="end-label"></p><h1 id="end-title"></h1><div id="end-text"></div><p id="end-stats"></p><button id="end-again" class="primary">再次走进公寓</button></div>
   <div id="fade" aria-hidden="true"></div>
   <div id="error" class="screen hidden"><h2>无法进入公寓</h2><p>渲染器初始化失败，请使用支持 WebGL 的浏览器。</p><button id="error-retry" class="primary">重新加载</button></div>
-  <script src="./js/bundle.js?v=6727298d9a"></script>
+  <script src="./js/bundle.js?v=65ccc1dffa"></script>
 </body>
 </html>

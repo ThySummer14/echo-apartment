@@ -8,7 +8,7 @@
     "start": "python3 -m http.server 8000 --bind 127.0.0.1",
     "build": "node build.mjs",
     "build:desktop": "node build.mjs desktop",
-    "test": "node campaign.test.mjs && node smoke.mjs && node traversal.test.mjs && node performance.test.mjs && node pursuit.test.mjs && node input-state.test.mjs && node --test --test-concurrency=1 navigation.test.mjs navigation-world.test.mjs && node bathroom-fixtures.test.mjs",
+    "test": "node campaign.test.mjs && node smoke.mjs && node traversal.test.mjs && node performance.test.mjs && node pursuit.test.mjs && node input-state.test.mjs && node --test --test-concurrency=1 navigation.test.mjs navigation-world.test.mjs && node bathroom-fixtures.test.mjs && node brightness.test.mjs",
     "audit": "node debug-audit.mjs"
   }
 }
