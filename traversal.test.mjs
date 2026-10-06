@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {TraversalGuard} from './js/traversal.js';
+import {interactionWorldPosition, interactionBlocked} from './js/interaction.js';
 import {ANNEX_AREAS} from './js/basement-annex.js';
 // 构建真实关卡，检查可达地板、封边和移动碰撞；Canvas stub 不验证画面。
 import * as THREE from './vendor/three.module.js';
@@ -211,5 +212,91 @@ test('重建衣柜的全部部件位于单一碰撞包络内，没有装饰碰�
   }
   assert.ok(wardrobe.children.length>25,'carcass, inset doors, hardware and ventilation are separate geometry');
   assert.equal(level.colliders.filter(x=>x===c).length,1);
+ }
+});
+
+test('厨房桌面由四条腿支撑，冰箱面板不超过机身，柜门后有真实空腔',()=>{
+ level.scene.updateMatrixWorld(true);
+ const table=level.props.kitchenTable;
+ const top=new THREE.Box3().setFromObject(table.top);
+ assert.ok(Math.abs(top.min.y-.74)<.02);
+ assert.equal(table.legs.length,4);
+ for(const leg of table.legs) {
+  const b=new THREE.Box3().setFromObject(leg);
+  assert.ok(Math.abs(b.min.y)<.02);
+  assert.ok(Math.abs(b.max.y-top.min.y)<.025);
+ }
+ const fridge=new THREE.Box3().setFromObject(level.props.fridgeDoor);
+ assert.ok(fridge.max.y<1.76);
+ const cupboard=level.props.cabinet;
+ for(const mesh of cupboard.carcass) {
+  const b=new THREE.Box3().setFromObject(mesh);
+  assert.ok(!b.containsPoint(new THREE.Vector3(-7.1,2.05,7.1)),'shelf cavity filled');
+  assert.ok(b.max.z<7.4,'cabinet embedded in wall');
+ }
+ cupboard.pivot.rotation.y=1.3;cupboard.pivot.updateMatrixWorld(true);
+ const door=new THREE.Box3().setFromObject(cupboard.pivot);
+ assert.ok(door.min.z<6.5,'opening reveals interior');
+ cupboard.pivot.rotation.y=0;cupboard.pivot.updateMatrixWorld(true);
+});
+
+
+test('衣柜调查锚点在把手高度，新增书架和椅子不再无碰撞',()=>{
+ level.scene.updateMatrixWorld(true);
+ const wardrobes=[];level.scene.traverse(o=>{if(o.userData.model==='wardrobe')wardrobes.push(o);});
+ for(const w of wardrobes) {
+  const anchor=interactionWorldPosition(w),base=w.getWorldPosition(new THREE.Vector3());
+  assert.ok(Math.abs(anchor.y-base.y-1.08)<.001);
+  const eye=new THREE.Vector3(base.x,base.y+1.55,base.z-1.6);
+  const ray=anchor.clone().sub(eye).normalize();
+  assert.ok(ray.z>Math.cos(Math.PI/6),'level gaze should reach the door handle');
+ }
+ assert.ok(level.colliders.filter(c=>c.propKind==='shelf').length>=4);
+});
+
+test('社区主线记录可从地面接近并具有清晰调查视线',()=>{
+ for(const [id,x,z] of [[25,-18,-22.3],[26,-12.5,-19.2],[27,17,-21.2]]) {
+  const rec=level.notePickups.find(r=>String(r.id)===String(id));assert.ok(rec);
+  const eye=new THREE.Vector3(x,1.55,z),target=interactionWorldPosition(rec.mesh);
+  assert.ok(eye.distanceTo(target)<2.6);
+  assert.equal(interactionBlocked(eye,target,level.colliders,level.doors),false,'record '+id+' occluded');
+ }
+});
+
+
+test('社区室内外地板不重叠共面，避免大片闪烁穿插',()=>{
+ const floors=level.colliders.filter(c=>c.walkable&&Math.abs(c.y1)<.001&&c.z1<=-9.09);
+ assert.equal(floors.length,5);
+ for(let i=0;i<floors.length;i++)for(let j=i+1;j<floors.length;j++) {
+  const a=floors[i],b=floors[j];
+  const overlap=Math.max(0,Math.min(a.x1,b.x1)-Math.max(a.x0,b.x0))*Math.max(0,Math.min(a.z1,b.z1)-Math.max(a.z0,b.z0));
+  assert.ok(overlap<.0001,'coplanar floor area '+overlap);
+ }
+});
+
+
+test('客厅书柜与浴室药柜有空腔，开门和柜体均不埋进墙体',()=>{
+ level.scene.updateMatrixWorld(true);
+ for(const part of level.props.bookcase.parts) {
+  const b=new THREE.Box3().setFromObject(part);
+  assert.ok(b.min.x>=-8.3-.005);
+  assert.equal(b.containsPoint(new THREE.Vector3(-8.12,1.1,10.3)),false);
+ }
+ for(const part of level.props.medicineCabinet.parts) {
+  const b=new THREE.Box3().setFromObject(part);
+  assert.ok(b.max.x< -13.9);
+  assert.equal(b.containsPoint(new THREE.Vector3(-14.02,2,15.5)),false);
+ }
+ const door=new THREE.Box3().setFromObject(level.props.medicineCabinet.door);
+ assert.ok(door.max.x< -13.9);assert.ok(door.min.y>=1.5);assert.ok(door.max.y<=2.2);
+});
+
+
+test('客厅茶几的桌面位于四条腿上，而不是倒置在地面',()=>{
+ level.scene.updateMatrixWorld(true);const table=level.props.coffeeTable;
+ const top=new THREE.Box3().setFromObject(table.top);
+ assert.ok(Math.abs(top.min.y-.32)<.015);assert.equal(table.legs.length,4);
+ for(const leg of table.legs){const b=new THREE.Box3().setFromObject(leg);
+  assert.ok(Math.abs(b.min.y)<.015);assert.ok(Math.abs(b.max.y-top.min.y)<.02);
  }
 });

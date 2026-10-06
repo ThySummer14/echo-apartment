@@ -1,4 +1,4 @@
-import { DOCUMENTS, INVENTORY_LABELS, CHAPTERS, SAVE_KEY } from './campaign.js';
+import { Campaign, DOCUMENTS, INVENTORY_LABELS, CHAPTERS, SAVE_KEY } from './campaign.js';
 import { WORLD_AREAS } from './campaign-world.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +11,7 @@ const puzzleDefinitions = {
   },
   radio: {
     title: '没有回应的频道', description: '四位调谐码。频道表留在电台旁边。',
-    hint: '14.07 MHz，去掉小数点，输入 1407。需要先启动备用柴油机。',
+    hint: '14.07 MHz，去掉小数点，输入 1407。需要先启动备用柴油机，并读过社区卫生站的救援接线记录。',
     complete: '「请报地点与姓名。」这一次，你没有结束呼叫。',
   },
   develop: {
@@ -54,7 +54,8 @@ export class InvestigationUI {
     this.saved = null;
     try {
       const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-      if (saved?.version === 2 && saved.flags?.invitation && !saved.flags?.ended) this.saved = saved;
+      const validated=new Campaign(saved);
+      if (validated.flags.invitation && !validated.flags.ended) this.saved = validated.snapshot();
     } catch {}
     $('continue-game').classList.toggle('hidden', !this.saved);
     $('continue-game').addEventListener('click', () => game._start(true));
@@ -136,7 +137,7 @@ export class InvestigationUI {
     $('resume-game').textContent = this.game.state === 'title' ? '返回' : '继续探索';
     $('checkpoint-retry').classList.toggle('hidden', this.game.state === 'title');
     this.game.audio.setPaused(true);
-    this.game.keys = {};
+    this.game._clearMovementInput();
     if (this.game.controls.isLocked) {
       this.game._skipUnlockPause = true;
       this.game.controls.unlock();
@@ -145,15 +146,18 @@ export class InvestigationUI {
 
   closeSettings() {
     $('pause').classList.add('hidden');
-    if (this.game.state === 'playing') this.game._tryLock();
-    this.game.audio.setPaused(false);
+    if (this.game.state === 'playing' && !this.game.noteOpen) {
+      if (this.game._touchUI) this.game._touchUI.classList.remove('hidden');
+      this.game._tryLock();
+    }
+    this.game.audio.setPaused(this.game.noteOpen || document.hidden);
   }
 
   open(panel) {
-    if (this.game.state !== 'playing' || this.game.noteOpen) return false;
+    if (this.game.state !== 'playing' || this.game.noteOpen || !$('pause').classList.contains('hidden')) return false;
     this.game.noteOpen = true;
     this.panel = panel;
-    this.game.keys = {};
+    this.game._clearMovementInput();
     this.game.audio.setPaused(true);
     if (this.game._touchUI) this.game._touchUI.classList.add('hidden');
     if (this.game.controls.isLocked) {
@@ -171,9 +175,10 @@ export class InvestigationUI {
     this.recording = null;
     document.activeElement?.blur();
     this.game.noteOpen = false;
-    this.game.audio.setPaused(false);
-    if (this.game._touchUI) this.game._touchUI.classList.remove('hidden');
-    if (this.game.state === 'playing') this.game._tryLock();
+    const paused=!$('pause').classList.contains('hidden');
+    this.game.audio.setPaused(paused || document.hidden);
+    if (this.game._touchUI && !paused) this.game._touchUI.classList.remove('hidden');
+    if (this.game.state === 'playing' && !paused) this.game._tryLock();
   }
 
   openJournal(tab = 'evidence') {
@@ -319,7 +324,7 @@ export class InvestigationUI {
       this.openRecording();
       return;
     }
-    const completed = { power: 'power', cabinet: 'cabinet', music: 'memory', valves: 'released', develop: 'photo' };
+    const completed = { power: 'power', cabinet: 'cabinet', music: 'memory', valves: 'released', develop: 'photo', generator: 'generator', radio: 'relay' };
     if (this.game.campaign.flags[completed[id]]) {
       this.game._sub('这里已经调查过了。记录保存在调查手册里。'); return;
     }

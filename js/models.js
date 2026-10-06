@@ -152,5 +152,6 @@ export function wardrobeModel(level,x,z,y) {
   const collider={x0:x-.625,x1:x+.625,y0:y,y1:y+2.05,z0:z-.36,z1:z+.31};
   level.colliders.push(collider);group.userData.collider=collider;
   group.userData.model='wardrobe';
+  group.userData.interactionPoint={x:0,y:1.08,z:-.34};
   return group;
 }

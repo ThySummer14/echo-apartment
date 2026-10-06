@@ -13,8 +13,11 @@ import { Campaign, DOCUMENTS, CHAPTERS, SAVE_KEY, ENDINGS } from './campaign.js'
 import { syncCampaignWorld, currentArea } from './campaign-world.js';
 import { InvestigationUI } from './investigation.js';
 import { AtmosphereDirector } from './atmosphere.js';
+import { isSafeSpawn } from './pursuit.js';
+import { clearMovementInput } from './input-state.js';
+import { ResolutionGovernor } from './performance.js';
 import { TraversalGuard } from './traversal.js';
-import { interactionBlocked } from './interaction.js';
+import { interactionBlocked, interactionWorldPosition } from './interaction.js';
 import { setSnapResolution, aabbFromSphere, moveWithCollisions, clamp, lerp, rand, chance, pick } from './util.js';
 
 const RENDER_W = 1280, RENDER_H = 720;
@@ -255,9 +258,7 @@ class Game {
     /* 手机适配：动态降分辨率（低端机保帧率）。
        档位 1 → 0.8 → 0.7 → 0.6；平均帧率 <38 降一档，>57 且冷却过才升回 */
     this.resScale = 1;
-    this.resCooldown = 0;
-    this.fpsAcc = 0;
-    this.fpsN = 0;
+    this.resolutionGovernor = new ResolutionGovernor();
   }
 
   _applyResolution() {
@@ -268,25 +269,9 @@ class Game {
     setSnapResolution(w, h);
   }
 
-  /* 每 2 秒结算一次平均帧率，带迟滞与冷却防抖动 */
-  _autoResolution(dt) {
-    this.fpsAcc += dt; this.fpsN++;
-    if (this.resCooldown > 0) { this.resCooldown -= dt; return; }
-    if (this.fpsAcc < 2 || this.fpsN < 60) return;
-    const fps = this.fpsN / this.fpsAcc;
-    this.fpsAcc = 0; this.fpsN = 0;
-    const steps = [1, 0.8, 0.7, 0.6];
-    let i = steps.indexOf(this.resScale);
-    if (i < 0) i = 0;
-    if (fps < 38 && i < steps.length - 1) {
-      this.resScale = steps[i + 1];
-      this.resCooldown = 10;
-      this._applyResolution();
-    } else if (fps > 57 && i > 0) {
-      this.resScale = steps[i - 1];
-      this.resCooldown = 10;
-      this._applyResolution();
-    }
+  _autoResolution(realDt) {
+    const scale=this.resolutionGovernor.sample(realDt);
+    if(scale!==null){this.resScale=scale;this._applyResolution();}
   }
 
   _fitCanvas() {
@@ -532,6 +517,12 @@ class Game {
     // keys
     window.addEventListener('keydown', (e) => { this.keys[e.code] = true; this._onKey(e); });
     window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+    const suspendInput = () => {
+      this._clearMovementInput();
+      if (this.state === 'playing' && this.investigation) this.investigation.openSettings();
+    };
+    window.addEventListener('blur', suspendInput);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) suspendInput(); });
 
     // --- trackpad / drag-to-look fallback -------------------------------
     // macOS trackpads (tap-to-click) often cannot obtain pointer lock, and
@@ -792,6 +783,11 @@ class Game {
     this._touchUI = ui;
   }
 
+  _clearMovementInput() {
+    clearMovementInput(this);
+    const knob=$('joy-knob'); if(knob)knob.style.transform='translate(0px, 0px)';
+  }
+
   // ------------------------------------------------------------ UI helpers
   // 双语精简：字幕只出中文（大标题的日语除外，见 index.html）
   _sub(cn, _ja = '', dur = 3.4) {
@@ -912,6 +908,7 @@ class Game {
   }
 
   _wakeAtCheckpoint(p = this.campaign.checkpoint) {
+    this._clearMovementInput();
     this.playerPos.set(p.x, p.y, p.z);
     this.char = aabbFromSphere(p.x, p.y, p.z, PLAYER_R, PLAYER_H);
     this.camera.position.set(p.x, p.y + EYE, p.z);
@@ -930,7 +927,9 @@ class Game {
 
   _spawnHunt() {
     if (this.state !== 'playing') return;
+    const colliders=this._dynColliders();
     const nodes = this.level.monsterNodes.filter((node) =>
+      isSafeSpawn(node,colliders) &&
       Math.abs(node.y - this.playerPos.y) < 0.5 &&
       Math.hypot(node.x - this.playerPos.x, node.z - this.playerPos.z) > 8 &&
       Math.hypot(node.x - this.playerPos.x, node.z - this.playerPos.z) < 20);
@@ -946,12 +945,12 @@ class Game {
       $('hide-state').classList.add('hidden'); this._sub('你推开衣柜的门。', '', 2); return;
     }
     const distance = this.monster.pos.distanceTo(this.playerPos);
-    if (['chase', 'stalk'].includes(this.monster.state) && distance < 5 &&
+    if (['chase', 'stalk', 'search'].includes(this.monster.state) && distance < 5 &&
       !interactionBlocked(this.camera.position, this.monster.pos.clone().add(new THREE.Vector3(0, 1.3, 0)), this.level.colliders, this.level.doors)) {
       this._sub('它看见了你。先关上门，或者拉开距离。', '', 3); return;
     }
     this.hiding = true; this.hideTimer = 0; this.hideMesh = mesh;
-    this.flashOn = false; this.keys = {}; this.audio.doorClose();
+    this.flashOn = false; this._clearMovementInput(); this.audio.doorClose();
     $('hide-state').classList.remove('hidden');
     this._sub('屏住呼吸。按 E 离开衣柜。', '', 4);
   }
@@ -1008,6 +1007,7 @@ class Game {
   _onKey(e) {
     if (e.repeat) return;
     if (e.code === 'Escape') {
+      if (!$('pause').classList.contains('hidden')) { this.investigation.closeSettings(); return; }
       if (this.noteOpen) { this._closeNote(); return; }
       if (this.state !== 'playing') return;
       if ($('pause').classList.contains('hidden')) this.investigation.openSettings();
@@ -1030,9 +1030,9 @@ class Game {
       if (this.hiding) { this._toggleHide(); return; }
       this._interact();
     }
-    if (e.code === 'KeyF' && this.state === 'playing' && !this.noteOpen && !this.hiding)
+    if (e.code === 'KeyF' && this.state === 'playing' && !this.noteOpen && !this.hiding && $('pause').classList.contains('hidden'))
       this._toggleFlash();
-    if (e.code === 'KeyR' && this.state === 'playing' && !this.noteOpen) this._wakeAtCheckpoint();
+    if (e.code === 'KeyR' && this.state === 'playing' && !this.noteOpen && $('pause').classList.contains('hidden')) this._wakeAtCheckpoint();
   }
 
 
@@ -1058,7 +1058,7 @@ class Game {
       const mesh = it.mesh;
       if (!mesh.visible) continue;
       // getWorldPosition 内部已含 updateWorldMatrix(true, false)，无需再手动调一次
-      const wp = mesh.getWorldPosition(this._tmpV || (this._tmpV = new THREE.Vector3()));
+      const wp = interactionWorldPosition(mesh, this._tmpV || (this._tmpV = new THREE.Vector3()));
       const dx = wp.x - camPos.x;
       const dy = wp.y - camPos.y;
       const dz = wp.z - camPos.z;
@@ -1082,7 +1082,7 @@ class Game {
     const note = DOCUMENTS[String(id)];
     if (!note) return;
     this.noteOpen = true;
-    this.keys = {};
+    this._clearMovementInput();
     this.audio.paperRustle();
     $('note-item').textContent = note.item;
     $('note-title').textContent = note.title;
@@ -1109,9 +1109,10 @@ class Game {
     this.noteOpen = false;
     document.activeElement?.blur();
     $('note').classList.add('hidden');
-    this.audio.setPaused(false);
-    if (this._touchUI) this._touchUI.classList.remove('hidden');
-    if (this.state === 'playing') this._tryLock();
+    const paused=!$('pause').classList.contains('hidden');
+    this.audio.setPaused(paused || document.hidden);
+    if (this._touchUI && !paused) this._touchUI.classList.remove('hidden');
+    if (this.state === 'playing' && !paused) this._tryLock();
   }
 
 
@@ -1494,14 +1495,19 @@ class Game {
 
   onChaseStart() {
     this._setFear(0.8);
-    this._sub('快跑！', '逃げろ！', 2.2);
+    this._sub('绕过转角，再放轻脚步。奔跑的声音会暴露位置。', '', 4);
     this._hbOn = true;
     this.audio.heartbeat(true, 1);
   }
 
+  onPursuitLost() {
+    this.eventTimer = Math.max(this.eventTimer,18);
+    this._setFear(Math.min(this.fear,.35));
+  }
+
   // ------------------------------------------------------------ random events
   _randomEvent() {
-    if (this.state !== 'playing' || this.monster.state === 'chase' || this.monster.state === 'attack') return;
+    if (this.state !== 'playing' || this.hiding || ['chase','attack','search'].includes(this.monster.state)) return;
     const r = Math.random();
     const p = this.playerPos;
     const farFromSpawn = Math.hypot(p.x, p.z + 1.35) > 6;
@@ -1517,7 +1523,7 @@ class Game {
       // ghost girl in a doorway
       const candidates = this.level.ghostSpawns.filter((s) => {
         const d = Math.hypot(s.x - p.x, s.z - p.z);
-        return d > 4.5 && d < 17;
+        return d > 4.5 && d < 17 && Math.abs((s.y ?? 0) - p.y) < .75;
       });
       if (candidates.length) {
         const s = pick(candidates);
@@ -1530,6 +1536,7 @@ class Game {
       // one the player is standing in would trap them inside the slab)
       const swingDoors = this.level.doors.filter((d) =>
         !d.locked && d.type === 'swing' && d.label !== '壁橱' &&
+        Math.abs(d.hinge.y - p.y) < .75 && Math.hypot(d.hinge.x-p.x,d.hinge.z-p.z) < 16 &&
         Math.hypot(d.hinge.x - p.x, d.hinge.z - p.z) > 3);
       if (swingDoors.length) {
         const door = pick(swingDoors);
@@ -1546,6 +1553,7 @@ class Game {
       // a far door creaks open on its own (only doors away from the player)
       const swingDoors = this.level.doors.filter((d) =>
         !d.locked && d.type === 'swing' && d.label !== '壁橱' &&
+        Math.abs(d.hinge.y - p.y) < .75 && Math.hypot(d.hinge.x-p.x,d.hinge.z-p.z) < 16 &&
         Math.hypot(d.hinge.x - p.x, d.hinge.z - p.z) > 4);
       if (swingDoors.length) {
         const door = pick(swingDoors);
@@ -1643,7 +1651,8 @@ class Game {
     requestAnimationFrame(this._loop);
     if (!this.initOK) return;
     const now = performance.now();
-    const dt = Math.min(0.05, (this.lastT ? (now - this.lastT) / 1000 : 0.016));
+    const realDt = this.lastT ? (now - this.lastT) / 1000 : 0.016;
+    const dt = Math.min(0.05, realDt);
     this.lastT = now;
     this.time += dt;
     this.investigation.update(dt);
@@ -1663,7 +1672,7 @@ class Game {
       this.camera.rotation.set(-.025, .26 + Math.sin(this.time * .055) * .055, 0);
     }
 
-    if (this.touchMode) this._autoResolution(dt);
+    if (!document.hidden) this._autoResolution(realDt);
 
     if (active || this.state === 'scared') {
       const scared = this.state === 'scared';
@@ -1673,8 +1682,11 @@ class Game {
     }
 
     this.skyMaterial.uniforms.uTime.value = this.time;
+    const doorBodies=this._doorBodies||(this._doorBodies=[]);doorBodies.length=0;
+    doorBodies.push(this.playerPos);
+    if(['stalk','chase','search','attack'].includes(this.monster.state))doorBodies.push(this.monster.pos);
     this.level.update(dt, this.time, this.camera.position,
-      this.camera.getWorldDirection(this._viewDir || (this._viewDir = new THREE.Vector3())), this.reduceEffects);
+      this.camera.getWorldDirection(this._viewDir || (this._viewDir = new THREE.Vector3())), this.reduceEffects, doorBodies);
     if (this.level.campaign.rain) {
       const array = this.level.campaign.rain.geometry.attributes.position.array;
       for (let i = 0; i < array.length; i += 6) {
@@ -1796,14 +1808,14 @@ class Game {
     }
 
     // camera shake
-    if (this.shake > 0) {
+    if (this.shake > 0 && !this.reduceEffects) {
       this.shake = Math.max(0, this.shake - dt * 1.6);
       this.camera.position.x += rand(-0.03, 0.03) * this.shake;
       this.camera.position.y += rand(-0.02, 0.02) * this.shake;
     }
 
     // fear fov + grade uniforms
-    const targetFov = 75 + this.fear * 7 + (this.state === 'scared' ? 10 : 0);
+    const targetFov = this.reduceEffects ? 75 : 75 + this.fear * 7 + (this.state === 'scared' ? 10 : 0);
     if (Math.abs(this.camera.fov - targetFov) > 0.1) {
       this.camera.fov = lerp(this.camera.fov, targetFov, dt * 4);
       this.camera.updateProjectionMatrix();
@@ -1946,6 +1958,7 @@ class Game {
 
     // head bob + footsteps (based on actual displacement, not input)
     const hSpeed = Math.hypot(this.playerPos.x - ox, this.playerPos.z - oz) / dt;
+    this.playerNoiseRadius = this.grounded && hSpeed > .4 ? (sprint ? 12 : 4) : 0;
     if (this.grounded && hSpeed > 0.4) {
       this.bobPhase += (hSpeed / 2.7) * dt * 8.5;
       const s = Math.sin(this.bobPhase);
@@ -1963,8 +1976,8 @@ class Game {
 
     // smooth the vertical camera: step-ups / stair climbs no longer teleport the eye
     this.eyeY = lerp(this.eyeY || 0, this.playerPos.y, Math.min(1, dt * 16));
-    this.camera.position.set(this.playerPos.x, this.eyeY + EYE + this.bob, this.playerPos.z);
-    this.camera.rotation.z = Math.sin(this.time * 0.4) * 0.0016 + this.fear * Math.sin(this.time * 1.7) * 0.005 + (sprint ? 0.012 * Math.sin(this.bobPhase) : 0);
+    this.camera.position.set(this.playerPos.x, this.eyeY + EYE + (this.reduceEffects ? 0 : this.bob), this.playerPos.z);
+    this.camera.rotation.z = this.reduceEffects ? 0 : Math.sin(this.time * 0.4) * 0.0016 + this.fear * Math.sin(this.time * 1.7) * 0.005 + (sprint ? 0.012 * Math.sin(this.bobPhase) : 0);
     this.camera.rotation.order = 'YXZ';
 
     // aim the flashlight target straight ahead of the camera
@@ -2052,6 +2065,7 @@ class Game {
   }
 
   _updateDirector(dt) {
+    if (this.atmosphere.cooldown > 0) return;
     this.eventTimer -= dt;
     if (this.eventTimer <= 0) {
       this.eventTimer = rand(21, 42);
@@ -2062,8 +2076,9 @@ class Game {
   _updateMonster(dt) {
     if (this.hiding) {
       this.hideTimer += dt;
-      if (this.hideTimer > 5) {
+      if (this.hideTimer > 5 && !['dormant','gone'].includes(this.monster.state)) {
         this.monster.despawn();
+        this.onPursuitLost();
         if (this._hbOn) { this._hbOn = false; this.audio.heartbeat(false); }
       }
       return;
@@ -2089,6 +2104,7 @@ class Game {
       player: pl,
       lookDir: dir,
       flashHit,
+      noiseRadius: this.playerNoiseRadius || 0,
       time: this.time,
       colliders: this._dynColliders(),
       stairs: this.level.stairs,

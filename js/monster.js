@@ -1,3 +1,5 @@
+import { GroundNavigator, navigationSegmentHits } from './navigation.js';
+import { PursuitMemory, movementAudible, isSafeSpawn } from './pursuit.js';
 import { stairNavigationTarget } from './stairs.js';
 // monster.js — the wrong-proportioned humanoid ("the tall black one")
 // and the pale ghost girl. Fully procedural models + procedural animation.
@@ -13,6 +15,9 @@ export class Monster {
   constructor(scene, tex) {
     this.scene = scene;
     this.tex = tex;
+    this.pursuit = new PursuitMemory();
+    this.groundNavigator = new GroundNavigator();
+    this.searchTimer = 0;
     this.state = 'dormant'; // dormant | stalk | chase | attack | gone
     this.speed = 0;
     this.pos = new THREE.Vector3();
@@ -179,6 +184,7 @@ export class Monster {
     this.group.visible = true;
     this.visible = true;
     this.state = state;
+    this.pursuit.reset(); this.groundNavigator.reset(); this.searchTimer = 0; this.waitingDoor = null;
     this.stareTimer = 0;
     this.litTimer = 0;
     this.stuckTime = 0;
@@ -219,9 +225,11 @@ export class Monster {
     const dist = Math.hypot(dx, dz);
     const toPlayer = new THREE.Vector3(dx, 0, dz).normalize();
     const sameFloor = Math.abs(p.y - this.pos.y) < 1;
-    const canSee = sameFloor && !interactionBlocked(
+    const blocked = interactionBlocked(
       this.pos.clone().add(new THREE.Vector3(0, 1.4, 0)),
       p.clone().add(new THREE.Vector3(0, 1.3, 0)), ctx.colliders, ctx.doors);
+    const canSee = sameFloor && dist < 24 && !blocked;
+    const audible = movementAudible(this.pos,p,ctx.noiseRadius || 0,blocked);
     const looking = canSee && toPlayer.dot(ctx.lookDir) < -0.55;
 
     // --- procedural animation ---
@@ -297,11 +305,23 @@ export class Monster {
       else if (dist > 26) this._moveToward(ctx, dt, 1.5);
     }
 
+    if (this.state === 'search') {
+      this.searchTimer -= dt;
+      if (canSee || audible) this._enterChase(ctx);
+      else if (this.searchTimer <= 0) { this.despawn(); ctx.game?.onPursuitLost?.(); return; }
+    }
     if (this.state === 'chase') {
+      const target = this.pursuit.update(dt,{player:p,visible:canSee,audible});
+      if (this.pursuit.expired) {
+        this.state = 'search'; this.searchTimer = 3;
+        ctx.game?._sub?.('脚步停在你刚才经过的地方。保持安静，绕开它的视线。', '', 4);
+        return;
+      }
       // chase speed 3.3: faster than the player's walk (2.7) but slower than
       // sprint (3.9), so escape requires actually running. It was 2.35, i.e.
       // SLOWER than walking - the monster could never catch anyone.
-      this._moveToward(ctx, dt, 3.3);
+      const remembered = new THREE.Vector3(target.x,target.y,target.z);
+      this._moveToward({...ctx,player:remembered,canSeePlayer:canSee},dt,3.3);
       this.stepTimer -= dt;
       if (this.stepTimer <= 0) {
         this.stepTimer = 0.5;
@@ -314,11 +334,7 @@ export class Monster {
         ctx.audio.sting();
         ctx.game?.onMonsterAttack?.();
       }
-      if (dist > 30) {
-        this._teleportNear(ctx, 18, 24);
-        this.state = 'stalk';
-        this.litTimer = 0;
-      }
+      // Distance alone never grants a teleport to the player's hidden location.
     }
 
     if (this.state === 'attack') {
@@ -338,7 +354,8 @@ export class Monster {
   }
 
   _enterChase(ctx) {
-    if (this.state !== 'stalk') return;
+    if (this.state !== 'stalk' && this.state !== 'search') return;
+    this.pursuit.reset(ctx.player);
     this.state = 'chase';
     this.stepTimer = 0;
     ctx.audio.moan(0);
@@ -350,7 +367,28 @@ export class Monster {
     const p = ctx.player;
     let targetX = p.x, targetZ = p.z;
     const stairTarget = stairNavigationTarget(ctx.stairs || [], this.pos, p);
-    if (stairTarget) { targetX = stairTarget.x; targetZ = stairTarget.z; }
+    if (stairTarget) { targetX = stairTarget.x; targetZ = stairTarget.z; this.groundNavigator.invalidate();this.waitingDoor=null; }
+    else {
+      const waypoint=this.groundNavigator.target(this.pos,p,ctx.colliders,ctx.doors||[],dt);
+      targetX=waypoint?.x ?? this.pos.x;targetZ=waypoint?.z ?? this.pos.z;
+    }
+    // Open an upcoming door from outside its swept radius, then wait for the
+    // panel to settle. Opening only after collision shoved the hunter sideways.
+    if(!stairTarget&&!this.waitingDoor)for(const door of ctx.doors||[]) {
+      if(door.locked||door.open||Math.abs(door.hinge.y-this.pos.y)>.5||
+        Math.hypot(door.hinge.x-this.pos.x,door.hinge.z-this.pos.z)>door.width+.65)continue;
+      let from=this.pos,crosses=false;
+      for(const to of (this.groundNavigator.path||[]).slice(0,4)){
+        if(door.collider&&navigationSegmentHits(from,to,door.collider)){crosses=true;break;}from=to;
+      }
+      if(crosses){ctx.game?.level?.forceOpen(door);ctx.audio.doorOpen();this.waitingDoor=door;break;}
+    }
+    if(this.waitingDoor){
+      const door=this.waitingDoor;
+      const settled=door.type==='slide'?Math.abs(door.slidePos-door.slideTarget)<.035:Math.abs(door.angle-door.openAngle)<.035;
+      if(door.locked||!door.open||settled){this.waitingDoor=null;this.groundNavigator.invalidate();}
+      else {targetX=this.pos.x;targetZ=this.pos.z;}
+    }
     const dx = targetX - this.pos.x, dz = targetZ - this.pos.z;
     const d = Math.max(0.0001, Math.hypot(dx, dz));
     const step = Math.min(d, speed * dt);
@@ -391,7 +429,7 @@ export class Monster {
           }
         }
         if (this.stuckTime > 2.2) {
-          this._teleportNear(ctx, 5, 9);
+          if(this.groundNavigator.path)this.groundNavigator.invalidate(); // no repeating failed plans or teleport fallback
           this.stuckTime = 0;
         } else if (opened) this.stuckTime = 0;
       }
@@ -405,8 +443,14 @@ export class Monster {
       if (Math.abs(n.y - ctx.player.y) > 0.5) continue;
       const d = Math.hypot(n.x - ctx.player.x, n.z - ctx.player.z);
       if (d < dMin || d > dMax) continue;
+      // A relocation is a behind-the-player/occluded stalking event, never
+      // a visible pop directly into the camera's forward hemisphere.
+      const toward=new THREE.Vector3(n.x-ctx.player.x,0,n.z-ctx.player.z).normalize();
+      if(ctx.lookDir && toward.dot(ctx.lookDir) > 0 && !interactionBlocked(
+        ctx.player.clone().add(new THREE.Vector3(0,1.55,0)),
+        new THREE.Vector3(n.x,n.y+1.4,n.z),ctx.colliders,ctx.doors))continue;
       // skip nodes that would embed the monster in a wall/object
-      if (this._hitWall(n.x, n.y, n.z, ctx.colliders)) continue;
+      if (!isSafeSpawn(n,ctx.colliders)) continue;
       const err = Math.abs(d - (dMin + dMax) / 2);
       if (err < bestErr) { bestErr = err; best = n; }
     }
@@ -427,7 +471,7 @@ export class Monster {
     for (const test of [dist, 0.8, 1.1, 1.5]) {
       const tx = ctx.player.x - ux * test;
       const tz = ctx.player.z - uz * test;
-      if (!this._hitWall(tx, ctx.player.y, tz, ctx.colliders)) {
+      if (isSafeSpawn({x:tx,y:ctx.player.y,z:tz},ctx.colliders)) {
         this.pos.x = tx;
         this.pos.z = tz;
         this.pos.y = ctx.player.y;

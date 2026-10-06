@@ -156,7 +156,7 @@ export function buildBasementAnnex(level, h) {
   closet(27.2,49,y);level._battery(28.5,64.8,y+.07);
 
   // 电台室：电源、调频盘、听筒和实体天线。完成呼叫后回到原泵房排水。
-  desk(15.3,65.4,y,3.1);chair(15.3,64.2,y);
+  desk(15.3,65.4,y,3.1);chair(15.3,64.6,y); // tucked toward the desk, clear of the return aisle
   const radio=box(15.3,65.4,y+.8,1.3,.65,.62,green,true);
   box(15.3,65.05,y+.95,.9,.035,.23,D.darkGlass);
   for(const x of [14.83,15.78])cylinder(x,y+1.0,65.0,.08,.075,D.paint,'z');

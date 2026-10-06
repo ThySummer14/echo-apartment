@@ -23,6 +23,19 @@ export function stairRoute(stair, storey = 0, direction = 1) {
 export function stairNavigationTarget(stairs, position, player) {
   const direction = Math.sign(player.y - position.y);
   if (Math.abs(player.y - position.y) < .15) return null;
+  // A futon or low equipment plinth is not another storey. Keep stair routing
+  // for actual landing heights or a target physically within a stairwell.
+  const targetsStairFloor=stairs.some(s=>{
+    const floor=(player.y-s.base)/s.rise;
+    return floor>=-.04&&floor<=s.storeys+.04&&Math.abs(floor-Math.round(floor))<.04;
+  });
+  const targetInStair=stairs.some(s=>{
+    const dx=player.x-s.x,dz=player.z-s.z,co=Math.cos(s.rotation),si=Math.sin(s.rotation);
+    const u=dx*co-dz*si,v=dx*si+dz*co;
+    return Math.abs(u)<s.width+s.gap/2+.3&&v>=-s.frontDepth-.3&&v<=s.run+s.landingDepth+.3&&
+      player.y>=s.base-.2&&player.y<=s.base+s.storeys*s.rise+.2;
+  });
+  if(!targetsStairFloor&&!targetInStair)return null;
   const candidates = stairs.filter(stair => position.y >= stair.base - .2 &&
     position.y <= stair.base + stair.storeys * stair.rise + .2 &&
     (direction > 0 ? position.y < stair.base + stair.storeys * stair.rise - .15 : position.y > stair.base + .15));
@@ -41,7 +54,14 @@ export function stairNavigationTarget(stairs, position, player) {
     const score=(position.x-a.x-t*dx)**2+(position.z-a.z-t*dz)**2+((position.y-a.y)*4-t*dy)**2;
     if(score<best-1e-7 || (Math.abs(score-best)<1e-7 && direction>0)) {best=score;segment=i;}
   }
-  const target=nodes[direction>0?segment+1:segment];
+  let index=direction>0?segment+1:segment;
+  // A descending body's footprint can still overlap the higher tread when its
+  // center reaches the lower tread marker. Advance horizontally instead of
+  // waiting for a vertical drop that requires the next horizontal step.
+  while(index+direction>=0 && index+direction<nodes.length &&
+    Math.hypot(position.x-nodes[index].x,position.z-nodes[index].z)<.38 &&
+    Math.abs(position.y-nodes[index].y)<.45) index+=direction;
+  const target=nodes[index];
   if(Math.abs(position.y-goalY)<.1)return null;
   return target;
 }

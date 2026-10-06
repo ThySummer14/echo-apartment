@@ -211,6 +211,8 @@ if (mon.state === 'attack') {
 }
 
 console.log('[6] monster follows the switchback staircase');
+const oldTeleport=mon._teleportNear;let stairTeleports=0;
+mon._teleportNear=()=>{stairTeleports++;};
 ctx.stairs = level.stairs;
 mon.spawn(new THREE.Vector3(0, 0, 62.6), 'chase');
 player.set(0, 2.8, 60.5);
@@ -219,7 +221,31 @@ if (mon.pos.y <= 2.5) console.log('  monster stair position:', mon.pos, 'state:'
 check('monster reached upper floor', mon.pos.y > 2.5);
 mon.spawn(new THREE.Vector3(0,2.8,62.6),'chase');player.set(0,0,60.5);
 for(let i=0;i<1500;i++)mon.update(.016,ctx);
+if(Math.abs(mon.pos.y)>=.05)console.log('  descent position',mon.pos,'state',mon.state,'memory',mon.pursuit);
 check('monster follows the same switchback down to the first floor',Math.abs(mon.pos.y)<.05);
+
+check('stair navigation succeeds without emergency teleport',stairTeleports===0);
+mon._teleportNear=oldTeleport;
+console.log('[6b] hunter loses a quiet hidden player');
+const memoryFloor={x0:-20,x1:20,z0:-20,z1:30,y0:-.1,y1:0};
+const memoryPlayer=new THREE.Vector3(0,0,10);
+const memoryCtx={...ctx,player:memoryPlayer,colliders:[memoryFloor],stairs:[],doors:[],nodes:[],noiseRadius:0};
+mon.spawn(new THREE.Vector3(0,0,0),'chase');mon.update(.016,memoryCtx);
+memoryCtx.colliders.push({x0:-20,x1:20,z0:2,z1:2.2,y0:0,y1:3});
+memoryPlayer.x=7;
+for(let i=0;i<900;i++)mon.update(.016,memoryCtx);
+check('quiet player behind a wall does not update the hunter target',mon.pursuit.target.x===0);
+check('hunter searches then withdraws after losing sight and sound',mon.state==='dormant');
+check('hunter never crosses the blocking wall while searching',mon.pos.z<2);
+
+console.log('[6c] stalking relocation stays outside the visible forward view');
+const stalkingCtx={...memoryCtx,player:new THREE.Vector3(0,0,0),lookDir:new THREE.Vector3(0,0,1),colliders:[memoryFloor],
+ nodes:[{x:0,y:0,z:8},{x:0,y:0,z:-8}]};
+mon.spawn(new THREE.Vector3(0,0,15),'stalk');mon._teleportNear(stalkingCtx,7,9);
+check('relocation prefers the unseen rear node over a visible front node',mon.pos.z===-8);
+stalkingCtx.nodes=[{x:0,y:0,z:8}];mon._teleportNear(stalkingCtx,7,9);
+check('no valid unseen node leaves the monster in place',mon.pos.z===-8);
+mon.despawn();
 
 console.log('[7] ghost');
 const ghost = new GhostGirl(scene);

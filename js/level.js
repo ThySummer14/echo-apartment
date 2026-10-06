@@ -819,7 +819,10 @@ export class Level {
     return it;
   }
 
-  updateDoors(dt, playerPos = null) {
+  updateDoors(dt, playerPos = null, otherPositions = []) {
+    const occupants=playerPos?[playerPos,...otherPositions]:otherPositions;
+    const hitsBody=(x0,x1,y0,y1,z0,z1)=>occupants.some(p=>
+      x0<p.x+.3&&x1>p.x-.3&&z0<p.z+.3&&z1>p.z-.3&&y1>p.y+.35&&y0<p.y+1.67);
     for (const d of this.doors) {
       if (d.type === 'swing') {
         const previous = d.angle;
@@ -832,9 +835,7 @@ export class Level {
           d.slab.updateWorldMatrix(true, false);
           const bb = d.worldBounds.copy(d.localBounds).applyMatrix4(d.slab.matrixWorld);
           // 门扇不能把玩家挤入墙角。关门受阻会重新打开；开门受阻则等待让路。
-          if (playerPos && bb.min.x < playerPos.x + .3 && bb.max.x > playerPos.x - .3 &&
-            bb.min.z < playerPos.z + .3 && bb.max.z > playerPos.z - .3 &&
-            bb.max.y > playerPos.y + .35 && bb.min.y < playerPos.y + 1.67) {
+          if (hitsBody(bb.min.x,bb.max.x,bb.min.y,bb.max.y,bb.min.z,bb.max.z)) {
             d.angle = previous; d.pivot.rotation.y = previous * d.dir;
             if (!d.open) { d.open = true; d.target = 1; }
             if (!d.obstructed) this.handlers.onDoorBlocked?.(d);
@@ -856,9 +857,7 @@ export class Level {
             ? boxAABB(d.hinge.x, d.hinge.y + d.height / 2, d.hinge.z + base + d.slidePos, 0.12, d.height, d.width)
             : boxAABB(d.hinge.x + base + d.slidePos, d.hinge.y + d.height / 2, d.hinge.z, d.width, d.height, 0.12);
           const c = d.collider;
-          if (playerPos && c.x0 < playerPos.x + .3 && c.x1 > playerPos.x - .3 &&
-            c.z0 < playerPos.z + .3 && c.z1 > playerPos.z - .3 &&
-            c.y1 > playerPos.y + .35 && c.y0 < playerPos.y + 1.67) {
+          if (hitsBody(c.x0,c.x1,c.y0,c.y1,c.z0,c.z1)) {
             d.slidePos = previous;
             if (!d.open) { d.open = true; d.target = 1; d.slideTarget = -d.slideOffset; }
             if (!d.obstructed) this.handlers.onDoorBlocked?.(d);
@@ -930,32 +929,48 @@ export class Level {
     const UY = 2.8; // upper floor height
 
     // ---------- kitchen ----------
-    this.box(-6.2, 7.25, 0, 3.4, 0.62, 0.92, M.darkWood, { geo: { ao: 'wall', uv: [4, 1] } }); // counter
-    this.box(-6.2, 7.25, 0.92, 3.5, 0.7, 0.06, stdMat({ color: 0x63665f, roughness: 0.78, metalness: 0.12 }), { geo: { ao: 'none' } }); // countertop (matte + dark: its far edge blew out at grazing angles under the flashlight)
-    // wall cabinet with auto-opening door
-    this.box(-6.6, 7.25, 1.6, 2.4, 0.62, 0.62, M.darkWood, { geo: { ao: 'wall' } });
+    this.box(-6.2, 7.04, 0, 3.4, 0.62, 0.92, M.darkWood, { geo: { ao: 'wall', uv: [4, 1] } }); // counter
+    this.box(-6.2, 7.01, 0.92, 3.5, 0.7, 0.06, stdMat({ color: 0x63665f, roughness: 0.78, metalness: 0.12 }), { geo: { ao: 'none' } }); // countertop (matte + dark: its far edge blew out at grazing angles under the flashlight)
+    // Hollow wall cabinet: the swinging door reveals shelves, never a solid cube.
+    const cabinetParts = [];
+    const cabinetPart = (x,z,y,w,d,h,mat=M.darkWood) => {
+      const part=this.box(x,z,y,w,d,h,mat,{geo:{bevel:true}});
+      cabinetParts.push(part);return part;
+    };
+    for(const x of [-7.77,-5.43])cabinetPart(x,7.06,1.6,.06,.60,.62);
+    for(const y of [1.6,2.17])cabinetPart(-6.6,7.06,y,2.4,.60,.05);
+    cabinetPart(-6.6,7.345,1.65,2.28,.03,.52);
+    cabinetPart(-6.6,7.09,1.89,2.28,.50,.035);
     const cabPivot = new THREE.Group();
-    cabPivot.position.set(-7.75, 1.6, 6.93);
-    const cabDoor = new THREE.Mesh(makeBoxGeo(1.05, 0.54, 0.04, { uv: [1, 1] }), M.darkWood);
-    cabDoor.position.set(0.525, 0.27, 0);
-    cabPivot.add(cabDoor);
+    cabPivot.position.set(-7.735, 1.65, 6.744);
+    const cabDoor = new THREE.Mesh(beveledBoxGeometry(1.09,.50,.04),M.darkWood);
+    cabDoor.position.set(.545,.25,0);cabPivot.add(cabDoor);
+    const pull=new THREE.Mesh(beveledBoxGeometry(.08,.025,.028),detailMaterials(this).brass);
+    pull.position.set(.95,.23,-.035);cabPivot.add(pull);
     this.scene.add(cabPivot);
-    this.props.cabinet = { pivot: cabPivot, angle: 0, openedOnce: false };
+    cabinetPart(-6.01,6.744,1.65,1.09,.04,.50);
+    cabinetPart(-6.42,6.706,1.87,.08,.035,.025,detailMaterials(this).brass);
+    this.props.cabinet = { pivot: cabPivot, angle: 0, openedOnce: false, carcass: cabinetParts };
     // fridge
     this.box(-7.7, 2.85, 0, 0.85, 0.85, 1.75, M.rust, { geo: { ao: 'wall' } });
     // door seam: a VERTICAL panel on the fridge's front face (z 3.275 side).
     // The old call was a horizontal slab with its center at the fridge's own
     // center (z=2.85), i.e. fully buried inside the body and invisible.
-    this.box(-7.7, 3.29, 0.875, 0.8, 0.06, 1.75, M.darkMetal, { geo: { ao: 'none' }, collide: false });
-    // table + chairs
-    this.box(-5.3, 4.6, 0, 1.4, 0.8, 0.06, M.darkWood, { geo: { ao: 'none', uv: [2, 1] } });
-    for (const [lx, lz] of [[-5.85, 4.6], [-4.75, 4.6], [-5.3, 4.05], [-5.3, 5.15]]) {
-      this.box(lx, lz, 0.06, 0.08, 0.08, 0.72, M.darkWood, { geo: { ao: 'none' } });
+    this.props.fridgeDoor = this.box(-7.7, 3.29, 0.025, 0.8, 0.06, 1.70, M.darkMetal, { geo: { ao: 'none' }, collide: false });
+    // Table and chairs: a supported top at dining height, not an upside-down
+    // slab at floor level. Legs and back slats are separate beveled geometry.
+    const tableTop=this.box(-5.3,4.6,.74,1.4,.8,.065,M.darkWood,{geo:{bevel:true}});
+    const tableLegs=[];
+    for(const dx of [-.59,.59])for(const dz of [-.29,.29])
+      tableLegs.push(this.box(-5.3+dx,4.6+dz,0,.065,.065,.74,M.darkWood,{geo:{bevel:true},collide:false}));
+    this.props.kitchenTable={top:tableTop,legs:tableLegs};
+    for(const [z,back] of [[3.55,-1],[5.65,1]]) {
+      this.box(-5.3,z,.42,.51,.51,.065,M.darkWood,{geo:{bevel:true}});
+      for(const dx of [-.2,.2])for(const dz of [-.2,.2])
+        this.box(-5.3+dx,z+dz,0,.045,.045,.42,M.darkWood,{geo:{bevel:true},collide:false});
+      for(const dx of [-.23,.23])this.box(-5.3+dx,z+back*.23,.46,.04,.045,.53,M.darkWood,{geo:{bevel:true},collide:false});
+      for(const y of [.59,.77,.95])this.box(-5.3,z+back*.23,y,.46,.045,.045,M.darkWood,{geo:{bevel:true},collide:false});
     }
-    this.box(-5.3, 3.55, 0, 0.55, 0.55, 0.46, M.darkWood, { geo: { ao: 'wall' } });
-    this.box(-5.3, 3.32, 0.46, 0.55, 0.07, 0.55, M.darkWood, { geo: { ao: 'none' } });
-    this.box(-5.3, 5.65, 0, 0.55, 0.55, 0.46, M.darkWood, { geo: { ao: 'wall' } });
-    this.box(-5.3, 5.88, 0.46, 0.55, 0.07, 0.55, M.darkWood, { geo: { ao: 'none' } });
     // kettle
     this.box(-5.5, 7.0, 0.98, 0.26, 0.26, 0.22, M.darkMetal, { geo: { ao: 'none' } });
     // sink + faucet (inset in the counter)
@@ -971,7 +986,7 @@ export class Level {
     faucetH.position.set(-5.72, 1.26, 7.21);
     this.scene.add(faucetV, faucetH);
     // stove + hood
-    this.box(-3.4, 7.25, 0, 0.95, 0.62, 0.92, M.whiteMetal, { geo: { ao: 'wall' } });
+    this.box(-3.4, 7.06, 0, 0.95, 0.62, 0.92, M.whiteMetal, { geo: { ao: 'wall' } });
     // rear burners at z=7.45 sat inside the south wall (z 7.4..7.6); the
     // stove's usable top is z 6.94..7.40, so space them at 6.89 / 7.29
     for (const [bx, bz] of [[-3.55, 7.05], [-3.25, 7.05], [-3.55, 7.29], [-3.25, 7.29]]) {
@@ -1045,8 +1060,11 @@ export class Level {
     this.box(-5.95, 12.2, 0, 0.16, 0.6, 0.55, M.darkWood, { geo: { ao: 'none' } });
     this.box(-3.65, 12.2, 0, 0.16, 0.6, 0.55, M.darkWood, { geo: { ao: 'none' } });
     // low table
-    this.box(-4.9, 14.0, 0, 1.1, 0.6, 0.06, M.darkWood, { geo: { ao: 'none' } });
-    this.box(-4.9, 14.0, 0.06, 0.1, 0.1, 0.32, M.darkWood, { geo: { ao: 'none' } });
+    const coffeeTop=this.box(-4.9,14,.32,1.1,.6,.06,M.darkWood,{geo:{bevel:true}});
+    const coffeeLegs=[];
+    for(const dx of [-.45,.45])for(const dz of [-.21,.21])
+      coffeeLegs.push(this.box(-4.9+dx,14+dz,0,.055,.055,.32,M.darkWood,{geo:{bevel:true},collide:false}));
+    this.props.coffeeTable={top:coffeeTop,legs:coffeeLegs};
     // tv light
     this.tvLight = new THREE.PointLight(0x8fb6cc, 0, 7, 1.8);
     this.tvLight.position.set(-6.5, 1.4, 14.2);
@@ -1068,16 +1086,24 @@ export class Level {
     // bookshelf against the west wall. Living-room west wall inner face is x=-8.3
     // (wall center -8.4, thickness 0.2); the cabinet must sit flush OUTSIDE it,
     // not half-buried in the wall (old center -8.28 put 0.13m inside the wall).
-    this.box(-8.15, 10.3, 0, 0.3, 2.2, 1.9, M.darkWood, { geo: { ao: 'wall' } });
-    this.box(-8.15, 10.3, 0.65, 0.32, 2.05, 0.05, M.darkWood, { geo: { ao: 'none' }, collide: false });
-    this.box(-8.15, 10.3, 1.25, 0.32, 2.05, 0.05, M.darkWood, { geo: { ao: 'none' }, collide: false });
+    const bookcaseParts=[];
+    const casePart=(x,z,y,w,d,h)=>{
+      const part=this.box(x,z,y,w,d,h,M.darkWood,{geo:{bevel:true},collide:false});
+      bookcaseParts.push(part);return part;
+    };
+    const bookcaseCollider=boxAABB(-8.15,.95,10.3,.3,1.9,2.2);
+    this.colliders.push(bookcaseCollider);
+    casePart(-8.265,10.3,0,.04,2.2,1.9);
+    for(const z of [9.23,11.37])casePart(-8.14,z,0,.28,.055,1.9);
+    for(const y of [0,.65,1.25,1.845])casePart(-8.14,10.3,y,.28,2.2,.055);
+    this.props.bookcase={parts:bookcaseParts,collider:bookcaseCollider};
     const bookCols = [0x6a3020, 0x20506a, 0x3a5a30, 0x6a5a20, 0x4a3050, 0x505050, 0x704020, 0x2a3a4a];
-    for (const shelfY of [0.7, 1.3]) {
+    for (const shelfY of [0.71, 1.31]) {
       for (let i = 0; i < 8; i++) {
         const bw = 0.045 + rng() * 0.05;
         // books must stand ON the shelf front (x≈-7.98, just proud of the new
         // cabinet face -8.00); the old -8.10 was inside the solid cabinet
-        this.box(-7.98, 9.42 + i * 0.25, shelfY, 0.05, bw, 0.2 + rng() * 0.13,
+        this.box(-8.115, 9.42 + i * 0.25, shelfY, 0.22, bw, 0.2 + rng() * 0.13,
           stdMat({ color: bookCols[(i * 3 + (shelfY > 1 ? 1 : 0)) % 8], roughness: 0.9 }), { geo: { ao: 'none' }, collide: false, cast: false });
       }
     }
@@ -1206,19 +1232,24 @@ export class Level {
     // sink
     this.box(-16.55, 15.35, 0, 0.55, 0.5, 0.8, M.whiteMetal, { geo: { ao: 'wall' } });
     this.box(-16.55, 15.35, 0.8, 0.6, 0.55, 0.05, M.whiteMetal, { geo: { ao: 'none' } });
-    // medicine cabinet, door ajar.
-    // The bathroom east wall spans x -13.9..-13.7 (bathroom inner face
-    // -13.9): the cabinet must protrude into the bathroom at x≈-13.93; the
-    // old x=-13.9/-13.86 placement was embedded in the wall, and the ajar
-    // door at x=-13.98 was fully inside it.
-    this.box(-13.93, 15.5, 1.5, 0.12, 0.5, 0.7, M.whiteMetal, { geo: { ao: 'wall' } });
-    const medPivot = new THREE.Group();
-    medPivot.position.set(-13.95, 1.55, 15.35); // hinge at the cabinet's bathroom-side edge
-    const medDoor = new THREE.Mesh(makeBoxGeo(0.06, 0.6, 0.5), M.whiteMetal);
-    medDoor.position.set(0, 0, 0.25);
-    medPivot.add(medDoor);
-    medPivot.rotation.y = -0.55; // swing INTO the bathroom (west), not into the wall/bedroom
-    this.scene.add(medPivot);
+    // Hollow medicine cabinet. Both its carcass and open door remain fully
+    // on the bathroom side of x=-13.9; the mirror is inset into its door frame.
+    const medicineParts=[];
+    const medPart=(x,z,y,w,d,h)=>{
+      const part=this.box(x,z,y,w,d,h,M.whiteMetal,{geo:{bevel:true},collide:false});
+      medicineParts.push(part);return part;
+    };
+    medPart(-13.945,15.5,1.5,.025,.6,.7);
+    for(const z of [15.215,15.785])medPart(-14.02,z,1.5,.18,.03,.7);
+    for(const y of [1.5,1.82,2.17])medPart(-14.02,15.5,y,.18,.6,.03);
+    this.colliders.push(boxAABB(-14.02,1.85,15.5,.18,.7,.6));
+    const medPivot=new THREE.Group();medPivot.position.set(-14.115,1.535,15.24);
+    const medDoor=new THREE.Mesh(beveledBoxGeometry(.025,.62,.52),M.whiteMetal);
+    medDoor.position.set(0,.31,.26);medPivot.add(medDoor);
+    const inset=new THREE.Mesh(new THREE.PlaneGeometry(.45,.54),detailMaterials(this).darkGlass);
+    inset.rotation.y=-Math.PI/2;inset.position.set(-.014,.31,.26);medPivot.add(inset);
+    medPivot.rotation.y=-.55;this.scene.add(medPivot);
+    this.props.medicineCabinet={parts:medicineParts,door:medPivot};
     // washing machine in the SE corner (clear of the tub rim x -16.55..-15.05
     // and the east wall inner face x=-13.9) - lid ajar, never quite drained
     const washer = this.box(-14.5, 20.3, 0, 0.62, 0.62, 0.92, M.whiteMetal, { geo: { ao: 'wall' } });
@@ -1860,7 +1891,7 @@ export class Level {
     // room nodes (monster teleport targets) - must sit on clear floor, not
     // inside furniture (the old (-4.8,12.5) was inside the living room's
     // coffee table, so the monster popped out of the table)
-    for (const [x, z] of [[-4.8, 4.5], [-2.8, 13.8], [-11, 12.5], [-15.5, 17.5], [4.8, 4.5], [4.8, 12]]) {
+    for (const [x, z] of [[-3.9, 4.5], [-2.8, 13.8], [-12.5, 12.5], [-15.5, 17.5], [4.8, 4.5], [4.8, 12]]) {
       this.monsterNodes.push({ x, z, y: 0 });
     }
     this.ghostSpawns = [
@@ -1916,8 +1947,8 @@ export class Level {
     return best;
   }
 
-  update(dt, time, playerPos = null, viewDir = null, reduced = false) {
-    this.updateDoors(dt, playerPos);
+  update(dt, time, playerPos = null, viewDir = null, reduced = false, doorBodies = null) {
+    this.updateDoors(dt, doorBodies ? null : playerPos, doorBodies || []);
     // 灯光预算节流重算（0.12s）：排序 51 盏灯的成本可忽略，切换只改 uniforms
     this._budgetT -= dt;
     if (this._budgetT < 0 && playerPos) {

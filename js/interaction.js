@@ -17,3 +17,11 @@ export function interactionBlocked(origin, target, colliders, doors = [], ignore
   };
   return colliders.some(blockedBy) || doors.some((door) => blockedBy(door.collider));
 }
+
+// Group origins often sit on the floor; aim at an authored handle instead of
+// requiring players to stare down at the base of a tall interactable.
+export function interactionWorldPosition(mesh, target = new THREE.Vector3()) {
+  const anchor=mesh.userData.interactionPoint;
+  if(anchor) return mesh.localToWorld(target.set(anchor.x,anchor.y,anchor.z));
+  return mesh.getWorldPosition(target);
+}

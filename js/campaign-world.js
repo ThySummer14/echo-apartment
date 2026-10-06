@@ -165,13 +165,15 @@ export function buildCampaignWorld(level) {
     }
   };
   const chair = (x, z, y, material = M.darkWood) => {
-    box(x, z, y + 0.4, 0.47, 0.46, 0.07, material);
+    box(x, z, y + 0.4, 0.47, 0.46, 0.07, material, true);
     for(const dx of [-.21,.21])box(x+dx,z+.2,y+.44,.048,.045,.49,material);
     for(const yy of [.57,.72,.87])box(x,z+.2,y+yy,.40,.045,.055,material);
     for (const dx of [-0.19, 0.19]) for (const dz of [-0.18, 0.18])
       box(x + dx, z + dz, y, 0.035, 0.035, 0.42, material);
   };
   const shelf = (x, z, y, width = 1.5) => {
+    const collider=boxAABB(x,y+.925,z,width+.055,1.85,.4);
+    collider.propKind='shelf';level.colliders.push(collider);
     for (const dx of [-width / 2, width / 2]) box(x + dx, z, y, 0.055, 0.4, 1.85, grey);
     for (let i = 0; i < 5; i++) {
       box(x, z, y + 0.08 + i * 0.41, width, 0.4, 0.045, grey);
@@ -501,7 +503,7 @@ export function buildCampaignWorld(level) {
   box(7.7, 41.95, 3.26, 1.2, 0.5, 0.11, M.pale);
   box(7.7, 44, 3.27, 1.9, 1.0, 0.07, blue);
   desk(4.1, 51.8, 2.8, 2);
-  chair(4.1, 50.6, 2.8);
+  chair(5.0, 50.6, 2.8); // leave the tape approach clear
   const tape = new THREE.Group();
   const tapeBody = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.18), grey);
   tape.add(tapeBody);

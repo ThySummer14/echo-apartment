@@ -18,7 +18,12 @@ export function buildCommunity(level,h) {
   const cream=stdMat({color:0xb6ad91,roughness:.81});
   const ochre=stdMat({color:0x877342,roughness:.83});
   const glass=stdMat({color:0x162c30,roughness:.22,metalness:.32});
-  level.floor(0,-27,48,36,0,stone,[16,12]);
+  // Room floors already extend 10 cm past their walls. Tile the outdoor
+  // floor around those exact footprints instead of placing a second floor
+  // beneath both interiors (coplanar surfaces shimmer/z-fight in WebGL).
+  level.floor(0,-13,48.2,7.8,0,stone,[16,3]);
+  level.floor(0,-27,19.8,20.2,0,stone,[7,7]);
+  level.floor(0,-41.1,48.2,8,0,stone,[16,3]);
   // Solid perimeter; the lobby is the only opening in the north edge.
   level.wallZ(-9,-24,-.8,0,3.2,M.concrete);
   level.wallZ(-9,.8,24,0,3.2,M.concrete);
