@@ -70,3 +70,12 @@ test('shower supply and mirror supports reach their physical connections',()=>{
   assert.ok(box(part).min.z<=14.9);assert.ok(box(part).max.z>=box(f.mirror.parts.backing).min.z);
  }
 });
+
+
+test('tub water reaches the real inner-wall cross-section instead of floating as an ellipse',()=>{
+ const size=box(f.tub.parts.water).getSize(new THREE.Vector3());
+ assert.ok(Math.abs(size.x-1.07)<.001);assert.ok(Math.abs(size.z-.4175)<.001);
+ const positions=f.tub.parts.water.geometry.attributes.position;
+ for(let i=0;i<positions.count;i++)assert.ok(Math.abs(positions.getY(i)-.31)<1e-6);
+ assert.ok(downAt(f.tub.parts.water,-15.32,20.5).length>0,'rounded rectangular corners should contain water');
+});

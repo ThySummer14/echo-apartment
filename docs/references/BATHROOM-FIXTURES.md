@@ -16,4 +16,8 @@ The player still cannot enter these small fixture footprints. Conservative body 
 
 ## Evidence and limits
 
-Seven fixture tests verify dimensions, wall clearance, hollow openings through downward raycasts, support contacts, drain/pedestal separation, normal orientation, finite geometry, connected plumbing/mounts and walkable clearance. The cluster contains 52 meshes and 6,116 triangles. This is geometry/physics evidence; final lighting, apparent material quality and audio remain subject to WebGL playtesting.
+Eight fixture tests verify dimensions, wall clearance, hollow openings through downward raycasts, support contacts, drain/pedestal separation, normal orientation, finite geometry, connected plumbing/mounts and walkable clearance. The cluster contains 52 meshes and 6,180 triangles. This is geometry/physics evidence; final lighting, apparent material quality and audio remain subject to WebGL playtesting.
+
+## Offline mesh inspection follow-up
+
+An exact-mesh CPU inspection render revealed that the original oval water patch did not meet the tub walls at its waterline. The water surface is now derived from the intersection of the actual inner-wall triangles with a horizontal plane. A new regression checks its full rounded-rectangular footprint. Inspection uses neutral studio lighting and flat proxies for texture maps; it is not a screenshot or acceptance test of the game renderer.

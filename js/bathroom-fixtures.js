@@ -29,6 +29,27 @@ export function vesselGeometry(profile,segments=64) {
   g.computeBoundingBox();g.computeBoundingSphere();return g;
 }
 
+// Intersect the actual inner-wall triangles with a horizontal waterline.
+// An arbitrary ellipse leaves a physically impossible floating patch of water.
+export function vesselFillGeometry(profile,y,segments=64) {
+  const r=profile.findIndex((p,i)=>i+1<profile.length&&p.y>=y&&profile[i+1].y<y);
+  if(r<0)throw new Error('Waterline must intersect the descending inner wall');
+  const a=profile[r],b=profile[r+1],t=(a.y-y)/(a.y-b.y);
+  const point=(p,i)=>{const angle=i/segments*Math.PI*2,c=Math.cos(angle),s=Math.sin(angle),power=2/(p.exponent??2);
+    return new THREE.Vector3((p.x??0)+Math.sign(c)*Math.abs(c)**power*p.w/2,y,(p.z??0)+Math.sign(s)*Math.abs(s)**power*p.d/2);};
+  const edge=[];
+  for(let i=0;i<segments;i++){
+    edge.push(point(a,i).lerp(point(b,i),t));
+    edge.push(point(a,i+1).lerp(point(b,i),t));
+  }
+  const center=edge.reduce((sum,p)=>sum.add(p),new THREE.Vector3()).multiplyScalar(1/edge.length);
+  const positions=[center.x,y,center.z],indices=[];
+  for(const p of edge){const d=p.clone().sub(center),length=d.length();p.addScaledVector(d,-Math.min(.0002/length,.01));positions.push(p.x,y,p.z);}
+  for(let i=0;i<edge.length;i++)indices.push(0,(i+1)%edge.length+1,i+1);
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setIndex(indices);g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();return g;
+}
+
 export function buildBathroomFixtures(level) {
   const D=detailMaterials(level),ceramic=new THREE.MeshStandardMaterial({color:0xbfc4b8,roughness:.48}),
     enamel=new THREE.MeshStandardMaterial({color:0xaab5aa,roughness:.54}),
@@ -67,8 +88,7 @@ export function buildBathroomFixtures(level) {
   mesh(tub,'hollow-shell',vesselGeometry(tp),enamel);tub.profile=tp;
   drain(tub,.44,.249,0,.0275);
   // Water occupies the cavity, safely below the rim and above the real bottom.
-  const surface=mesh(tub,'water',new THREE.CircleGeometry(1,64),water,0,.31,0);
-  surface.rotation.x=-Math.PI/2;surface.scale.set(.515,.19,1);
+  mesh(tub,'water',vesselFillGeometry(tp,.31),water);
   // Supported mixer and shower riser: all connections are visibly continuous.
   pipe(tub,'mixer-stem',[.40,.55,.255],[.40,.74,.255],.02);
   pipe(tub,'mixer-spout',[.40,.74,.255],[.40,.74,.05],.016);
