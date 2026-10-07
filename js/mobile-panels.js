@@ -58,8 +58,11 @@ export function bindMobilePanels(doc=document,isRotated=()=>Boolean(window.__for
 
 export function bindTouchButton(element,activate){
  let press=null;
- element.addEventListener('touchstart',e=>{e.preventDefault();if(e.touches.length!==1){press=null;return;}const t=e.changedTouches[0];press={id:t.identifier,x:t.clientX,y:t.clientY};},{passive:false});
- element.addEventListener('touchmove',e=>{if(!press)return;const t=Array.from(e.changedTouches).find(t=>t.identifier===press.id);if(e.touches.length!==1||(t&&Math.hypot(t.clientX-press.x,t.clientY-press.y)>12))press=null;},{passive:true});
+ // Other fingers may be steering the joystick or looking around. Only touches
+ // that began on this button participate in its tap/cancel policy.
+ const localTouches=e=>e.targetTouches||Array.from(e.touches).filter(t=>t.target===element||t.identifier===press?.id||Array.from(e.changedTouches).some(c=>c.identifier===t.identifier));
+ element.addEventListener('touchstart',e=>{e.preventDefault();if(localTouches(e).length!==1){press=null;return;}const t=e.changedTouches[0];press={id:t.identifier,x:t.clientX,y:t.clientY};},{passive:false});
+ element.addEventListener('touchmove',e=>{if(!press)return;const t=Array.from(e.changedTouches).find(t=>t.identifier===press.id);if(localTouches(e).length!==1||(t&&Math.hypot(t.clientX-press.x,t.clientY-press.y)>12))press=null;},{passive:true});
  element.addEventListener('touchcancel',()=>{press=null;},{passive:true});
  element.addEventListener('touchend',e=>{e.preventDefault();if(!press)return;const t=Array.from(e.changedTouches).find(t=>t.identifier===press.id);if(!t)return;const r=element.getBoundingClientRect();const valid=Math.hypot(t.clientX-press.x,t.clientY-press.y)<=12&&t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom;press=null;if(valid)activate();},{passive:false});
 }

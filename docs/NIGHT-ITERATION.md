@@ -95,3 +95,9 @@ A visible player standing on the 24 cm bedroom futon previously sent the hunter 
 ## Referenced bathroom fixture reconstruction
 
 Rebuilt the original bathroom cluster using primary manufacturer dimensional references, documented in `docs/references/BATHROOM-FIXTURES.md`. The bath, toilet and basin now have true open shells, connected/supporting parts, and separate conservative collision envelopes. Seven new tests verify footprint, cavity depth, openings, normal orientation, contact/support, plumbing connections and the front service aisle. The complete suite at this checkpoint passes 69 unit cases and 57 smoke assertions. No claim of WebGL visual acceptance is made.
+
+## Mobile concurrent-input fix, 2026-10-07
+
+Gameplay tap buttons previously required exactly one touch across the entire screen. Holding the movement joystick or looking with another finger therefore silently disabled investigate, flashlight and pause. These buttons now count only touches that began on the same button. Dragging off, cancellation and two fingers on the same button still reject a tap; the next clean press recovers normally. Investigation-panel multi-touch policy is unchanged.
+
+Added a concurrent joystick/look/button regression plus drag, cancel and recovery assertions. Full `npm test` and `npm run build:desktop` pass. Cloud-browser public baseline still reports WebGL renderer initialization failure, so this iteration has no rendered 3D or physical-phone acceptance claim.

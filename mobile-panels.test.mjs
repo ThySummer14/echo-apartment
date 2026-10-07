@@ -77,3 +77,15 @@ test('unrotated mobile swipes and page buttons reach offscreen keypad rows',()=>
  for(let i=0;i<12;i++)down.emit('click');assert.equal(pane.scrollTop,pane.scrollHeight-pane.clientHeight);for(let i=0;i<12;i++)up.emit('click');assert.equal(pane.scrollTop,0);
  const input=new Element('input');input.min='70';input.max='500';input.step='1';assert.equal(rangeTouchValue(input,touch(200,10),false),500);
 });
+
+
+test('gameplay taps work while another finger holds the joystick or look surface',()=>{
+ const button=new Element('button');let taps=0;bindTouchButton(button,()=>taps++);
+ const joystick=touch(400,300,8),look=touch(600,200,9),finger=touch(30,30,1);
+ const emit=(type,changed,local)=>button.emit(type,{changedTouches:[changed],touches:[joystick,look,...local],targetTouches:local});
+ emit('touchstart',finger,[finger]);emit('touchmove',touch(33,31),[touch(33,31)]);emit('touchend',touch(33,31),[]);assert.equal(taps,1);
+ emit('touchstart',finger,[finger]);emit('touchmove',touch(80,30),[touch(80,30)]);emit('touchend',touch(80,30),[]);assert.equal(taps,1,'drag is still rejected');
+ emit('touchstart',finger,[finger]);emit('touchcancel',finger,[]);emit('touchend',finger,[]);assert.equal(taps,1,'cancel is still rejected');
+ emit('touchstart',finger,[finger]);emit('touchstart',touch(40,30,2),[finger,touch(40,30,2)]);emit('touchend',finger,[]);assert.equal(taps,1,'two fingers on the same button cancel');
+ emit('touchstart',finger,[finger]);emit('touchend',finger,[]);assert.equal(taps,2,'button recovers after cancellation');
+});
